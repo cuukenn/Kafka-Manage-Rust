@@ -106,7 +106,7 @@
 | T027 | ConsumeService（订阅注册表 + 暂停/恢复/seek/停止） | T024 | `--test svc_consume` | ✅（7/7；补了「保留调用方 subscription id」断言） |
 | T028 | GroupService（列表/详情/位点/reset） | T024 | `--test svc_groups` | ✅（8/8） |
 | T029 | 驱动护栏：超时 + 重试包装（用故障注入测） | T024,T015 | `--test driver_guard` | ✅（15/15；T065 未改变可重试集合） |
-| T030 | `App` 门面装配（store+bus+services）+ 冒烟测试 | T025–T029 | `cargo test -p kafka-app` | ⬜ |
+| T030 | `App` 门面装配（store+bus+services）+ 冒烟测试 | T025–T029 | `cargo test -p kafka-app` | ✅（94/94，其中 `app_smoke` 2/2；clippy 零告警） |
 
 ### 缺陷卡（发现即登记；T057–T059 是空闲号段）
 

@@ -32,4 +32,6 @@
 - `cargo clippy --workspace --all-targets` 无新增告警
 
 ## 结果（完成后填写，≤5 行）
--
+- `lib.rs`：`App{store,bus,clusters,topics,produce,consume,groups}` + `App::new(Store, EventBus)` + 最小 `App::builder()`（store/bus 可选，缺省内存库/默认总线）+ 7 个访问器 + `shutdown()`（stop_all→disconnect_all）；可选 `src/error.rs` 按裁量跳过（`ServiceError` 已覆盖冒烟链路，YAGNI）。
+- `tests/app_smoke.rs` 2 测覆盖 6 步链路，全 Mock、`start_paused` 虚拟时钟 + 有界超时；步骤 6 用 `RuntimeMetrics::num_alive_tasks()` 断言回落到启动基线（`MockState::active_pumps` 经公共服务 API 不可达，未加外部访问器），并有正向对照断言。
+- 验收：`cargo test -p kafka-app` 94/94 绿（debug exe 被 AV 锁 LNK1104 时按已知 flake 改 `--release` 复验）；`cargo clippy --workspace --all-targets -- -D warnings` 零告警；新增 2 文件 / 250 行整。
