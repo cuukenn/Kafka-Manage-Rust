@@ -28,4 +28,6 @@
 - `cargo test -p kafka-driver --test mock_stream_ctl` 全绿，测试数 ≥ 5
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `crates/kafka-driver/tests/mock_stream_ctl.rs`（210 行，6 个测试，仅公开 `KafkaDriver` trait + `StreamControls`）；`cargo test -p kafka-driver --test mock_stream_ctl` 6/6 全绿（0.44s 含编译，测试本体 0.00s，0 ignored），clippy 零告警。
+- 覆盖：pause 静默且流不结束 + resume 补齐顺序 + 恢复后仍活跃；seek 重定位游标并精确回放；seek 无关分区被忽略；stop 后流结束且后续消息不送达；drop 后流结束且 driver 无死锁、日志续写；同 topic 双订阅互不影响（各有游标）。
+- 未改任何生产代码，未触发 T016；pump 任务退出只按可观察契约断言（流结束 / 静默），未加计数器，T068 落地不受影响。
