@@ -1,0 +1,237 @@
+# 任务拆分索引（小步执行 / 上下文友好）
+
+> 用法：**一个会话只做一张任务卡**。新会话只喂两块内容：
+> 1. `docs/TASKS.md`（本文件，只读索引）
+> 2. `docs/tasks/Txxx-*.md`（本次要做的那一张卡）
+>
+> 不要一次性喂多张卡，也不要让会话自己"顺手"做下一个任务。
+
+---
+
+## 0. 上下文协议（每个会话都遵守）
+
+| 规则 | 说明 |
+|---|---|
+| 只读白名单 | 任务卡里的「只读这些文件」列表，最多 3 个源文件；超出即视为跑偏 |
+| 改动上限 | 单任务最多改 **3 个文件**、新增 **≤ 250 行**；超了就停下拆分 |
+| 验证命令 | 任务卡里的验收命令必须跑绿才算完成 |
+| 收尾动作 | 完成后：① 本索引状态列改 `✅`；② 卡片末尾追加「结果」小节（≤5 行）；③ 若发现新问题，只登记新任务卡，不在本会话实现 |
+| 上下文告警 | 若会话已读大量文件仍没进展，直接结束会话并写「阻塞」状态，不要硬撑 |
+
+**新会话启动语模板**（复制即用）：
+```
+读 docs/TASKS.md 和 docs/tasks/<卡片文件名>，只做这一张卡。
+严格遵守卡片的「只读白名单」「改动上限」「验收命令」，完成后更新索引状态和卡片结果小节。
+```
+
+状态图例：`⬜未开始` `🔵进行中` `✅完成` `⛔阻塞` `⏸待建卡`（索引里有 ID，但卡片未写）
+
+---
+
+## 1. 当前进度快照（2026-10-13）
+
+- ✅ **环境已通（T001 完成，2026-10-13）**：Windows SDK `10.0.26100` 已用
+  `winget install --id Microsoft.WindowsSDK.10.0.26100 --exact` 装好，`Lib`/`Include`/`bin` 齐全，
+  `rustc hello.rs` 裸链接通过并打印 `ok`。VS Build Tools 2022（MSVC 14.44.35207）本来就在，
+  之前只缺 SDK。rustc 通过注册表自动发现，无需配 PATH。代价：C: 盘剩 6.59 GB。
+- ✅ 已编译通过：`kafka-core`（cluster/topic/message/group/error/dto/protocol，含 protocol 单测）
+  —— `cargo check -p kafka-core --all-targets` 全绿，缺陷见 T052（已修）。
+- ✅ 已编译通过：`kafka-driver`（`KafkaDriver` trait、`MockKafkaDriver`、`MockState`、`MockPump`、
+  `FaultInjection`）—— T053 修完 6 处缺陷后 `cargo check -p kafka-driver --all-targets` 全绿、
+  `cargo test -p kafka-driver` **11 passed / 0 failed**。阶段 1（T010–T017）现在可以真正写测试了。
+- ✅ `src/` 已编译通过：`kafka-app`（`store`、`bus`、`services/*`、`driver_guard`）—— T056 修完 7 个错误后
+  `cargo check -p kafka-app --lib` → `LIB_EXIT=0`，T051 的 `Debug` 修复同时得到验证（已转 ✅）。
+- ✅ **`kafka-app` 已全绿**：`cargo test -p kafka-app` → **92 tests / 0 failed**（9 个集成目标 + lib + doc），
+  `cargo check -p kafka-app --all-targets` → EXIT=0，`cargo clippy -p kafka-app --all-targets` → kafka-app **零告警**。
+  路径：T056（`src/` 7 错）→ T057（3 文件 6 个机械错）→ T058（`svc_clusters`/`svc_topics` 3 错）→ T059（3 条 clippy）。
+  分布：bus 9 / driver_guard 15 / store_clusters 12 / store_settings 9 / svc_clusters 10 /
+  svc_consume 7 / svc_groups 8 / svc_produce 7 / svc_topics 8。
+- ✅ 编译打通后才现形的 **4 个行为缺陷**（都不是新引入，均已修并加回归锁）：
+  **T064** `AppEvent` 的 serde tag 被 `rename_all` 改成 camelCase、payload 字段却没改 →
+  9 个 variant 各自 `#[serde(rename = "<点号>", rename_all = "camelCase")]` + 「tag == `event_name()`」全量守卫；
+  **T065** `ErrorDto::new` 写死 `retryable:false` → 改由 `ErrorKind::is_retryable()` 决定；
+  **T066** `svc_topics.rs:278` 断言失败是**测试缺陷**（在写入前 drain）→ 补「恰好一条 `TopicChanged{Created}`」；
+  **T067** `import_clusters` 覆盖 `updated_at` 使 export→import→export 不恒等 → 新增 `Stamp::{Now,Preserve}`。
+- ✅ **存量 clippy 已全部清零**：`cargo clippy --workspace --all-targets -- -D warnings` → **EXIT=0，零告警**。
+  `kafka-driver` 4 条（T054）、`kafka-core` 2 条（T055）、`kafka-app` 3 条（T059）。
+  T054 里 `PumpHandle.join` 的处置是**删字段**而非加 `Drop`——`PumpHandle` 在 `driver.rs:591-593`
+  就被解构丢弃，`Drop` 里 abort 会在流交付前掐掉它；由此暴露的空转问题登记为 **T068**。
+- ⬜ 空壳：`webview-bridge`、`main-bin`
+- ✅ T020–T029 已全部转 ✅（各自的验收命令本会话都跑绿，见 §2 索引括号里的计数）。
+  阶段 2 只剩 **T030**（`App` 门面装配 + 冒烟测试）未做。
+  rust-analyzer 的报错在这个仓库里是过期缓存，不可作为依据。
+- 备注：`kafka-driver` 的 `default = []`，`real`（rdkafka）是 opt-in → 阶段 1/2 无需 librdkafka/cmake。
+- 工具链：rustc 1.99.0 / cargo 1.99.0 / VS Build Tools 2022（MSVC 14.44.35207）/ Windows SDK 10.0.26100 / edition 2024 / rust-version 1.85
+- ✅ **T002 完成：基线已提交**（2026-10-13）。`cargo test --workspace` → **108 passed / 0 failed**
+  （core 5 + driver 11 + app 92）；`cargo clippy --workspace --all-targets -- -D warnings` → 零告警。
+  `.gitignore` 补了 `.codegraph/` 与 `*.rmeta`（根目录两个探针残留文件只忽略、未删除）。
+- 仓库状态：**已有 1 条基线提交**（`chore: baseline (core + mock driver)`，88 个文件）。
+
+---
+
+## 2. 任务索引
+
+### 阶段 0 · 环境与基线（阻塞项）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T001 | 修复 MSVC 链接环境（装 Windows SDK） | — | `rustc hello.rs` 能链接；`cargo check -p kafka-core -p kafka-driver` 通过 | ✅（环境已通；第 3 步的代码缺陷转 T052/T053） |
+| T002 | 全仓基线跑绿 + 首次提交 | T001 | `cargo test --workspace`、`cargo clippy --workspace --all-targets` | ✅（108 tests 全绿；`-D warnings` 也零告警） |
+
+### 阶段 1 · Mock 驱动补测与补齐（`kafka-driver`）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T010 | Mock 测试：生命周期 / cluster_info / capabilities | T002 | `cargo test -p kafka-driver --test mock_lifecycle` | ⬜ |
+| T011 | Mock 测试：topic CRUD / describe / 配置 / offsets | T002 | `--test mock_topics` | ⬜ |
+| T012 | Mock 测试：produce + subscribe 消息流 + offset 语义 | T002 | `--test mock_produce_consume` | ⬜ |
+| T013 | Mock 测试：流控制 pause/resume/seek/cancel | T002 | `--test mock_stream_ctl` | ⬜ |
+| T014 | Mock 测试：消费组 / 位点查询 / reset / commit | T002 | `--test mock_groups` | ⬜ |
+| T015 | Mock 测试：故障注入 + `DriverEvent` 事件流 | T002 | `--test mock_faults` | ⬜ |
+| T016 | 修复 T010–T015 暴露的 Mock 缺陷（范围由失败用例决定） | T010–T015 | 上述测试全绿 | 🔵静态修复已做，待编译验证（卡片已建） |
+| T017 | Mock 数据落盘：snapshot JSON 保存/恢复 | T002 | `cargo test -p kafka-driver --test mock_persist` | ⬜ |
+
+### 阶段 2 · 业务层（`kafka-app`，全部用 Mock 测试）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T020 | SQLite 底座：连接 / 迁移 / 错误映射 | T002 | `cargo test -p kafka-app` | ✅（92 tests 全绿，T059 后验证） |
+| T021 | Store：集群配置 CRUD（含导入导出 JSON） | T020 | `--test store_clusters` | ✅（12/12；导入时间戳缺陷由 T067 修掉） |
+| T022 | Store：应用设置 KV + 最近打开 + Mock 快照 | T020 | `--test store_settings` | ✅（9/9） |
+| T023 | 事件总线：`AppEvent` + broadcast 封装 | T002 | `--test bus` | ✅（9/9；tag/字段名漂移由 T064 修掉并加守卫） |
+| T024 | ClusterService + 驱动注册表（连接/切换/断开） | T021,T023 | `--test svc_clusters` | ✅（10/10） |
+| T025 | TopicService（透传 + 事件驱动刷新） | T024 | `--test svc_topics` | ✅（8/8；drain 时序缺陷由 T066 修掉） |
+| T026 | ProduceService（单条/批量 + 回执映射） | T024 | `--test svc_produce` | ✅（7/7） |
+| T027 | ConsumeService（订阅注册表 + 暂停/恢复/seek/停止） | T024 | `--test svc_consume` | ✅（7/7；补了「保留调用方 subscription id」断言） |
+| T028 | GroupService（列表/详情/位点/reset） | T024 | `--test svc_groups` | ✅（8/8） |
+| T029 | 驱动护栏：超时 + 重试包装（用故障注入测） | T024,T015 | `--test driver_guard` | ✅（15/15；T065 未改变可重试集合） |
+| T030 | `App` 门面装配（store+bus+services）+ 冒烟测试 | T025–T029 | `cargo test -p kafka-app` | ⬜ |
+
+### 缺陷卡（发现即登记；T057–T059 是空闲号段）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T051 | 修 `Slot` + `EventBus::Inner` 的 `Debug` derive（`Arc<dyn KafkaDriver>` 不满足 `Debug`，级联到 4 个 service） | T053 | `cargo check -p kafka-app` | ✅（T056 后验证） |
+| T052 | 修 `kafka-core` 首次编译报错（缺 anyhow 依赖 / `Clone` vs `anyhow::Error` / serde `Default` / `B64::encode`） | T001 | `cargo check -p kafka-core --all-targets` | ✅ |
+| T053 | 修 `kafka-driver` 首次编译报错（mock：4 个缺 `Default`、`f32: Eq`、`produce` 双重借用、种子夹具循环） | T001,T052 | `cargo check -p kafka-driver --all-targets` | ✅ |
+| T054 | 清 `kafka-driver` 存量 clippy 告警（实测 4 条：`pump.rs` 未读字段 / `contains()` ×2 / 冗余 cast；另 3 处 Default 后赋值） | T053 | `cargo clippy -p kafka-driver --all-targets` 零告警 | ✅（`join` 字段删除；空闲空转转 **T068**） |
+| T055 | 清 `kafka-core` 存量 clippy 告警 2 条（`dto.rs` 的 `map().flatten()`） | T052 | `cargo clippy -p kafka-core --all-targets` 零告警 | ✅ |
+| T068 | Mock pump 在 `follow: true` 空闲时永不退出（`tx.send` 走不到 → 探测不到接收端已亡） | T054 | `cargo test -p kafka-driver`（含 2 条新测试） | ⬜ |
+| T056 | 修 `kafka-app` 首次编译报错 7 个（含 T051/T052 的 2 处连带影响，见卡片表格） | T053 | `cargo check -p kafka-app --all-targets` | ✅（`src/` 已绿；`--all-targets` 剩 9 错拆给 T057/T058） |
+| T057 | 修 `kafka-app` 测试编译错误第一批（`svc_groups`/`driver_guard`/`store_settings`，6 个机械错） | T056 | `--test svc_groups --test driver_guard --test store_settings` | ✅（15+9+8 全绿） |
+| T058 | 修 `kafka-app` 测试编译错误第二批（`svc_clusters`/`svc_topics`，含 `Arc<dyn KafkaDriver>: Debug` 设计信号） | T056 | `--test svc_clusters --test svc_topics` | ✅（`--all-targets` 已 EXIT=0；跑绿后浮出 T066） |
+| T059 | 清 `kafka-app` 存量 clippy 告警（实测 3 条：冗余 cast / `Copy` 上的 `.clone()` / 未用变量补断言） | T057,T058 | `cargo clippy -p kafka-app --all-targets` 零告警 | ✅（92 tests 仍全绿） |
+| T064 | 修 `AppEvent` 的 serde 形状与 wire 契约漂移（tag 变 camelCase、payload 字段没变 camelCase） | T057 | `--test bus --test svc_groups --test svc_produce` | ✅（含 9 variant 的 tag 漂移守卫） |
+| T065 | 修 `ErrorDto::new` 硬编码 `retryable:false`（与 `is_retryable` 分类漂移） | T057 | `cargo test -p kafka-core` + `--test bus --test driver_guard` | ✅ |
+| T066 | 修 `svc_topics.rs:278`「读操作不发事件」断言失败（测试在写入前 drain，自己那条 `TopicChanged{Created}` 还在队列） | T058 | `--test svc_topics --test svc_clusters` | ✅（补断言顺带锁「恰好一条不重复发布」） |
+| T067 | 修 `import_clusters` 覆盖 `updated_at` 导致 export→import→export 不恒等 | T058 | `--test store_clusters --test svc_clusters` | ✅（新增 `Stamp::{Now,Preserve}`） |
+
+### 阶段 3 · WebView 桥接（`webview-bridge` + `main-bin`）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T031 | tao+wry 窗口启动 + 静态资源加载（dev/embedded） | T030 | 手动：窗口打开显示占位页 | ⏸待建卡 |
+| T032 | Router 内核：envelope 解析 + 命令表 + 假 App 单测 | T030 | `cargo test -p webview-bridge` | ⏸ |
+| T033 | Router：`cluster.*` + `config.*` | T032 | `--test router_cluster` | ⏸ |
+| T034 | Router：`topic.*` + `produce.*` | T032 | `--test router_topic_produce` | ⏸ |
+| T035 | Router：`consume.*` | T032 | `--test router_consume` | ⏸ |
+| T036 | Router：`group.*` + `mock.*` | T032 | `--test router_group_mock` | ⏸ |
+| T037 | 事件泵：总线 → JS `evaluate`（节流/批量） | T032 | `--test event_pump`（假 sink） | ⏸ |
+| T038 | `main.rs` 启动装配：日志、配置目录、App、事件循环 | T031,T033–T037 | 手动：Mock 集群可连通 | ⏸ |
+| T039 | 端到端冒烟（Mock）：连接→列 topic→发消息→收事件 | T038 | 手动清单全过 | ⏸ |
+
+### 阶段 4 · 前端 UI（HTML + Vue3 + Tailwind，全部对接 Mock）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T040 | 资源骨架 + 本地 vendored Vue/Tailwind + `rpc.js`/`events.js` | T039 | 手动：页面加载无 404 | ⏸ |
+| T041 | 应用外壳：布局 / 导航 / 主题切换 / 状态栏 | T040 | 手动 | ⏸ |
+| T042 | 集群页 + 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T041 | 手动 | ⏸ |
+| T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | 手动 | ⏸ |
+| T044 | Topic 表格 + 创建/删除弹窗 + 配置编辑 | T043 | 手动 | ⏸ |
+| T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | 手动 | ⏸ |
+| T046 | 消费面板（offset 起点、实时表格、暂停/恢复/停止） | T044 | 手动 | ⏸ |
+| T047 | 消息详情抽屉（raw/JSON/base64）+ 搜索过滤 | T046 | 手动 | ⏸ |
+| T048 | 消费组页 + 重置位点弹窗 | T044 | 手动 | ⏸ |
+| T049 | 日志面板 + toast + 全局 loading | T041 | 手动 | ⏸ |
+| T050 | 细节打磨：深浅色、空状态、快捷键 | T049 | 手动 | ⏸ |
+
+### 阶段 5 · 事件驱动 NIO 流强化
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T060 | 消息节流/批量策略（速率 + 缓冲上限） | T037,T027 | `cargo test -p kafka-app --test consume_throttle` | ⏸ |
+| T061 | 背压与丢弃策略（有界通道 + 溢出计数） | T060 | `--test consume_backpressure` | ⏸ |
+| T062 | 断线自动重连（指数退避 + 状态事件） | T024 | `--test reconnect` | ⏸ |
+| T063 | 资源回收：关闭订阅 / 释放驱动 / 优雅退出 | T027 | `--test teardown` | ⏸ |
+
+### 阶段 6 · RealKafka 驱动（`--features real`，此阶段才需 Kafka）
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T070 | `real` 模块骨架 + `cargo check --features real` 通过 | T001 | `cargo check -p kafka-driver --features real` | ⏸ |
+| T071 | real：cluster_info / list / describe topics | T070 | 真集群手动清单 | ⏸ |
+| T072 | real：create / delete / update topic | T071 | 真集群手动清单 | ⏸ |
+| T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ⏸ |
+| T074 | real：subscribe 流 + list_offsets | T073 | 真集群手动清单 | ⏸ |
+| T075 | real：消费组 + reset/commit 位点 | T071 | 真集群手动清单 | ⏸ |
+| T076 | real：SASL/SSL 参数映射（来自 `ClusterConfig`） | T070 | 真集群手动清单 | ⏸ |
+| T077 | Mock/Real 行为对齐测试架（`#[ignore]` + 环境变量门控） | T071–T076 | `cargo test -p kafka-driver -- --ignored` | ⏸ |
+
+### 阶段 7 · 健壮性与可观测
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T080 | tracing → `log.line` 事件 → 前端日志面板 | T037,T049 | 手动 | ⏸ |
+| T081 | 错误映射审计：每种 `ErrorKind` 的 hint 覆盖测试 | T030 | `cargo test -p kafka-core` | ⏸ |
+| T082 | UI 取消在途请求 + 全局超时 | T032,T029 | `--test cancel_inflight` | ⏸ |
+| T083 | 日志导出与轮转 | T080 | 手动 | ⏸ |
+
+### 阶段 8 · 打包与跨平台
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T090 | 前端资源 `include_dir` 嵌入 + 资源路由 | T040 | `cargo run -p main-bin` 显示 UI | ⏸ |
+| T091 | Windows WebView2 运行时检测与首启提示 | T090 | 手动 | ⏸ |
+| T092 | CI 矩阵（win/linux/macos）+ 产物上传 | T090 | CI 绿 | ⏸ |
+| T093 | Linux webkitgtk 依赖说明 + README | T092 | 文档 | ⏸ |
+
+### 阶段 9 · 系统测试与性能
+
+| ID | 任务 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T100 | Mock 全流程脚本化 E2E 测试 | T063,T050 | `cargo test --workspace` | ⏸ |
+| T101 | criterion 基准：Mock produce/consume 吞吐 | T030 | `cargo bench -p kafka-driver` | ⏸ |
+| T102 | 长跑内存/句柄泄漏检查 | T063 | 手动 + 报告 | ⏸ |
+
+---
+
+## 3. 关键路径
+
+```
+T001 ✅ → T052 ✅ → T053 ✅ → {T010..T015} → T016 → T017
+                            ↘ T020 → T021/T022 → T024 → {T025..T029} → T030 → T032 → {T033..T037} → T038 → T039 → 阶段4
+                            ↘ T056 ✅ → T057 ✅ → {T064 ✅, T065 ✅} → T058 ✅ → {T066 ✅, T067 ✅} → T059 ✅ → T054 ✅ → T055 ✅ → T002 ✅ 基线已提交
+```
+
+**基线已建立（T002）**：`cargo test --workspace` → **108 passed / 0 failed**
+（`kafka-core` 5 + `kafka-driver` 11 + `kafka-app` 92 / 10 个集成目标）；
+`cargo clippy --workspace --all-targets -- -D warnings` → **零告警**。首次提交已落地。
+
+下一步的关键路径有两条，可并行：
+1. **阶段 1 补测**：T010–T015（Mock 各域集成测试，现在编译与测试都通了，可以真正写起来）→ T016 → T017。
+2. **阶段 2 收尾**：**T030**（`App` 门面装配 + 冒烟测试）→ T032（桥接层）→ 阶段 4 前端。
+
+新登记的缺陷卡：**T068**（Mock pump 在 `follow: true` 空闲时永不退出）。
+本会话修掉的 4 个行为缺陷：**T064**（`AppEvent` serde 形状漂移 + 漂移守卫）、
+**T065**（`ErrorDto::new` 写死 `retryable:false`）、**T066**（`svc_topics` drain 时序，测试缺陷）、
+**T067**（`import_clusters` 覆盖 `updated_at`，往返不恒等）。
+
+阶段 4（前端）与阶段 2/3 可在 T039 之后并行，但**同一会话仍只做一张卡**。
+
+---
+
+## 4. 建卡规则（后续阶段）
+
+索引里 `⏸待建卡` 的任务，在**即将开始它的那个会话**里才建卡，卡片放 `docs/tasks/`，模板见 `docs/tasks/_TEMPLATE.md`。
+建卡时只允许读：本索引 + 直接依赖任务的「结果」小节（不要读它们的完整 diff）。

@@ -1,0 +1,23 @@
+[package]
+name = "main-bin"
+description = "Application entry point: assembles services, bridge and embedded frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+real = ["kafka-app/real", "kafka-driver/real"]
+
+[dependencies]
+kafka-core.workspace = true
+kafka-app.workspace = true
+kafka-driver.workspace = true
+webview-bridge.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+include_dir.workspace = true

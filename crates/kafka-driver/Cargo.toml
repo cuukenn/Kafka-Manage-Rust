@@ -1,0 +1,32 @@
+[package]
+name = "kafka-driver"
+description = "KafkaDriver abstraction with an in-memory Mock driver (and a Real driver slot)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# Phase 6: pull in librdkafka (needs cmake + C toolchain). Kept off so mock
+# development compiles with zero native dependencies.
+real = ["dep:rdkafka"]
+
+[dependencies]
+kafka-core.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+rdkafka = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -1,0 +1,33 @@
+[package]
+name = "kafka-app"
+description = "Business services, event bus and SQLite store for rs-kafka-ui-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+real = ["kafka-driver/real"]
+
+[dependencies]
+kafka-core.workspace = true
+kafka-driver.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+rusqlite.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"
