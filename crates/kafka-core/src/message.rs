@@ -184,7 +184,7 @@ impl OffsetStart {
 
 /// Server-side filter applied before messages are pushed to the UI, so a noisy
 /// topic does not flood the WebView.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SearchFilter {
     #[serde(default)]
@@ -201,6 +201,20 @@ pub struct SearchFilter {
 
 fn bool_true() -> bool {
     true
+}
+
+/// Hand-written to mirror the serde defaults (notably `match_value: true`),
+/// so `SearchFilter::default()` and a wire `{}` describe the same filter.
+impl Default for SearchFilter {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            match_value: true,
+            match_key: false,
+            case_sensitive: false,
+            regex: false,
+        }
+    }
 }
 
 impl SearchFilter {
@@ -410,4 +424,25 @@ impl Stream for MessageStream {
 /// Convenience: build a `TopicPartition` list from a subscription's resolved targets.
 pub fn topic_partitions(topic: &str, partitions: &[u32]) -> Vec<TopicPartition> {
     partitions.iter().map(|p| TopicPartition::new(topic, *p)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SearchFilter;
+
+    /// T069: the Rust-side default must agree with the wire-side default
+    /// (an empty JSON object), so `SearchFilter::default()` and
+    /// `serde_json::from_str::<SearchFilter>("{}")` are the same filter.
+    #[test]
+    fn search_filter_default_matches_serde_default() {
+        let from_rust = SearchFilter::default();
+        let from_wire: SearchFilter =
+            serde_json::from_str("{}").expect("an empty JSON object is a valid SearchFilter");
+        assert_eq!(from_rust, from_wire, "SearchFilter::default() must equal the serde default");
+        assert_eq!(from_rust.query, from_wire.query, "query");
+        assert_eq!(from_rust.match_value, from_wire.match_value, "match_value");
+        assert_eq!(from_rust.match_key, from_wire.match_key, "match_key");
+        assert_eq!(from_rust.case_sensitive, from_wire.case_sensitive, "case_sensitive");
+        assert_eq!(from_rust.regex, from_wire.regex, "regex");
+    }
 }

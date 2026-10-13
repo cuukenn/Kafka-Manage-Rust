@@ -230,6 +230,36 @@ async fn list_offsets_on_an_empty_topic_has_equal_watermarks() {
     assert_eq!(earliest_offsets, latest_offsets, "earliest == latest while the topic is empty");
 }
 
+/// T069: an explicitly requested unknown topic fails with `TopicNotFound`
+/// (matching `describe_topics`), while a known topic with an empty partitions
+/// list still resolves every one of its partitions.
+#[tokio::test]
+async fn list_offsets_rejects_unknown_topic_but_keeps_known_topic_empty_partition_list() {
+    let driver = connected_driver(1).await;
+    let mut req = CreateTopicReq::new("known.topic");
+    req.num_partitions = 2;
+    driver.create_topic(&req).await.expect("create_topic should succeed");
+
+    let unknown = vec![TopicPartition::new("missing.topic", 0)];
+    let err = driver
+        .list_offsets(&offsets_req(unknown, OffsetSpec::Latest))
+        .await
+        .expect_err("an unknown topic must fail, not silently resolve to an empty Ok");
+    assert!(
+        matches!(err, DriverError::TopicNotFound(ref name) if name == "missing.topic"),
+        "expected TopicNotFound, got {err:?}"
+    );
+    assert_eq!(err.kind(), ErrorKind::NotFound, "TopicNotFound maps to NotFound, got {:?}", err.kind());
+
+    let all = driver
+        .list_offsets(&offsets_req(Vec::new(), OffsetSpec::Earliest))
+        .await
+        .expect("a known topic with an empty partitions list still resolves");
+    let mut partitions: Vec<u32> = all.iter().map(|r| r.partition).collect();
+    partitions.sort_unstable();
+    assert_eq!(partitions, vec![0, 1], "an empty partitions list returns every partition of the known topic");
+}
+
 /// Topic ops on a driver that never connected fail with `NotConnected` instead of
 /// succeeding against an empty state.
 #[tokio::test]

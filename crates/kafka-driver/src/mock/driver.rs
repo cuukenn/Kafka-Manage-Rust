@@ -430,7 +430,8 @@ impl KafkaDriver for MockKafkaDriver {
 
         let mut out = Vec::with_capacity(targets.len());
         for tp in targets {
-            let Some(topic) = state.topics.get(&tp.topic) else { continue };
+            let topic =
+                state.topics.get(&tp.topic).ok_or_else(|| DriverError::TopicNotFound(tp.topic.clone()))?;
             let Some(partition) = topic.find_partition(tp.partition) else {
                 return Err(DriverError::PartitionNotFound { topic: tp.topic.clone(), partition: tp.partition });
             };

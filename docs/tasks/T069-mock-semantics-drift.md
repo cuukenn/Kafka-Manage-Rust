@@ -37,4 +37,6 @@
 - `cargo clippy --workspace --all-targets -- -D warnings` 零告警
 
 ## 结果（完成后填写，≤5 行）
--
+- 已完成：`list_offsets` 对未知 topic 由静默跳过改为 `Err(DriverError::TopicNotFound)`（对齐 `describe_topics`）；`SearchFilter` 改手写 `Default`，`match_value: true` 对齐 serde。
+- RED 先行：2 条新断言修复前均失败（未知 topic 曾返回空 `Ok([])`；`default().match_value == false` vs serde `true`），修复后转 GREEN。
+- 验证：`cargo test -p kafka-core` 6 过 / `cargo test -p kafka-driver` 65 过（T012 filter 夹具无回归）/ `cargo clippy --workspace --all-targets -- -D warnings` 零告警。
