@@ -1,6 +1,6 @@
 # T010 · Mock 测试：生命周期 / cluster_info / capabilities
 
-**状态**: ⬜未开始 | **依赖**: T002 | **改动上限**: 1 文件 / 250 行
+**状态**: ✅已完成 | **依赖**: T002 | **改动上限**: 1 文件 / 250 行
 
 ## 目标
 用集成测试锁住 `MockKafkaDriver` 的连接语义，后续所有任务都依赖这个契约。
@@ -30,4 +30,5 @@
 - 测试数 ≥ 6
 
 ## 结果（完成后填写，≤5 行）
--
+- 新增 `crates/kafka-driver/tests/mock_lifecycle.rs`（135 行，7 用例）：未连接 `list_topics`/`cluster_info` 均返回 `DriverError::NotConnected`；connect→cluster_info broker 非空且 controller 在 broker 集合内；disconnect 后回到未连接；capabilities 三项 mock 标志为 true；`kind()==Mock`；重复 connect 按现有实现断言为**幂等**（再次返回 Ok、连接态保持、broker/controller 不变，seed 一次性消费）。
+- `cargo test -p kafka-driver --test mock_lifecycle`：7 passed / 0 failed / 0 ignored，clippy `--tests` 零警告。未发现 Mock 缺陷，无 ignored，无需登记 T016。
