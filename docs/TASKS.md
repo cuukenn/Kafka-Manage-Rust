@@ -86,7 +86,7 @@
 | T011 | Mock 测试：topic CRUD / describe / 配置 / offsets | T002 | `--test mock_topics` | ✅（8/8 全绿，未触发 T016 缺陷） |
 | T012 | Mock 测试：produce + subscribe 消息流 + offset 语义 | T002 | `--test mock_produce_consume` | ✅（10/10 全绿，未触发 T016 缺陷） |
 | T013 | Mock 测试：流控制 pause/resume/seek/cancel | T002 | `--test mock_stream_ctl` | ✅（6/6 全绿，未触发 T016 缺陷） |
-| T014 | Mock 测试：消费组 / 位点查询 / reset / commit | T002 | `--test mock_groups` | ⬜ |
+| T014 | Mock 测试：消费组 / 位点查询 / reset / commit | T002 | `--test mock_groups` | ✅（8/8 全绿，未触发 T016 缺陷） |
 | T015 | Mock 测试：故障注入 + `DriverEvent` 事件流 | T002 | `--test mock_faults` | ⬜ |
 | T016 | 修复 T010–T015 暴露的 Mock 缺陷（范围由失败用例决定） | T010–T015 | 上述测试全绿 | 🔵静态修复已做，待编译验证（卡片已建） |
 | T017 | Mock 数据落盘：snapshot JSON 保存/恢复 | T002 | `cargo test -p kafka-driver --test mock_persist` | ⬜ |
