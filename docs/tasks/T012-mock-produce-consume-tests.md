@@ -34,4 +34,5 @@
 - 单测总耗时 < 3s
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `crates/kafka-driver/tests/mock_produce_consume.rs`（249 行，10 个用例，0 ignored）：produce 单条/批量 offset 连续、显式 partition 落地、mock 按 round-robin 路由（key 不固定分区，故卡片「若实现如此」分支不成立，改为锁定 round-robin）、key+二进制 headers 原样往返、earliest/latest/指定 offset/时间戳起点、越界 offset 报 `OffsetOutOfRange`、先订阅后写入能推送、过滤命中/不命中。
+- 验证：`cargo test -p kafka-driver --test mock_produce_consume` 10 passed / 0 failed（测试二进制耗时 0.172s）；`cargo clippy -p kafka-driver --all-targets -- -D warnings` 0 warnings；`cargo test --workspace` 全绿。未发现生产缺陷，无 `#[ignore]`；全程无 sleep，靠 `start_paused` + `max_messages` 界定读取。
