@@ -5,6 +5,8 @@
 //! `end_offset` is the log length — matching a Kafka partition with no retention.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -184,7 +186,7 @@ impl MockGroup {
 }
 
 /// Everything the mock driver knows. Cheap to clone for snapshots.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MockState {
     #[serde(default)]
@@ -207,11 +209,32 @@ pub struct MockState {
     /// Mock broker version string reported to the UI.
     #[serde(default = "default_mock_version")]
     pub version: String,
+    /// Live subscription pumps (T068). Observability-only: the pump task's RAII
+    /// guard bumps it on entry and drops it on every exit, so tests can prove a
+    /// pump has stopped instead of spinning. Not persisted, never compared.
+    #[serde(skip)]
+    pub active_pumps: Arc<AtomicU64>,
 }
 
 fn default_mock_version() -> String {
     "3.7.0-mock".to_string()
 }
+
+impl PartialEq for MockState {
+    fn eq(&self, other: &Self) -> bool {
+        self.cluster_id == other.cluster_id
+            && self.controller_id == other.controller_id
+            && self.brokers == other.brokers
+            && self.connected == other.connected
+            && self.config == other.config
+            && self.topics == other.topics
+            && self.groups == other.groups
+            && self.round_robin == other.round_robin
+            && self.version == other.version
+    }
+}
+
+impl Eq for MockState {}
 
 impl Default for MockState {
     fn default() -> Self {
@@ -225,6 +248,7 @@ impl Default for MockState {
             groups: BTreeMap::new(),
             round_robin: 0,
             version: default_mock_version(),
+            active_pumps: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -248,6 +272,11 @@ impl MockState {
 
     pub fn has_topic(&self, name: &str) -> bool {
         self.topics.contains_key(name)
+    }
+
+    /// How many mock subscription pumps are live right now (T068 observability).
+    pub fn active_pumps(&self) -> u64 {
+        self.active_pumps.load(Ordering::SeqCst)
     }
 
     /// Creates a topic with partitions spread round-robin over the brokers.

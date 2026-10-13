@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::sync::{mpsc, RwLock};
@@ -30,6 +31,26 @@ pub(crate) struct PumpOptions {
     pub poll_ms: u64,
 }
 
+/// Observability-only (T068): RAII guard bumping `MockState::active_pumps`. Production
+/// code never reads the counter; it exists so tests can prove a pump task has exited
+/// instead of sleeping and guessing. Created at the top of the task body, so every
+/// exit path — `break`, `return`, panic, or task cancellation at runtime shutdown —
+/// drops it exactly once and decrements the count.
+struct PumpGuard(Arc<AtomicU64>);
+
+impl PumpGuard {
+    fn new(counter: Arc<AtomicU64>) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for PumpGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// Handle for a running pump task.
 ///
 /// Owns only the message receiver. It deliberately does **not** keep the
@@ -38,9 +59,8 @@ pub(crate) struct PumpOptions {
 /// task would kill the stream before the caller ever received it. Dropping a
 /// `JoinHandle` merely detaches the task, which is what the pump relies on: it
 /// terminates by itself when the `StreamCommand` sender drops with the subscription
-/// (`commands.recv()` → `None`) or when a send fails because the reader is gone.
-/// The one case that does not terminate — `follow: true` with no new messages, which
-/// never reaches a send and so never notices the closed channel — is tracked by T068.
+/// (`commands.recv()` → `None`), when a send fails because the reader is gone, or —
+/// since T068 — when an idle `follow: true` tick finds the message channel closed.
 pub(crate) struct PumpHandle {
     pub receiver: mpsc::Receiver<Result<MessageEvent, DriverError>>,
 }
@@ -53,6 +73,10 @@ pub(crate) fn spawn(
     let (tx, rx) = mpsc::channel(CHANNEL_DEPTH);
 
     tokio::spawn(async move {
+        // Registered before the first await point that matters, so the counter covers
+        // the task's whole life; dropping this binding on ANY exit below decrements it.
+        let _pump_guard = PumpGuard::new(state.read().await.active_pumps.clone());
+
         let PumpOptions { topic, partitions, mut cursors, follow, max_messages, filter, poll_ms } = options;
         let mut paused = false;
         let mut sent: u64 = 0;
@@ -107,6 +131,13 @@ pub(crate) fn spawn(
 
             if batch.is_empty() {
                 if !follow {
+                    break;
+                }
+                // T068: a quiet follow log never reaches a send, so the dead-reader
+                // signal must be probed directly — otherwise this task would spin on
+                // the poll interval (one state read-lock per tick) for the whole
+                // driver lifetime even though nobody is listening.
+                if tx.is_closed() {
                     break;
                 }
                 continue;

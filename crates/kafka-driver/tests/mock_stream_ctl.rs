@@ -3,9 +3,9 @@
 //! buttons — all driven through the public `KafkaDriver` trait and its control handle.
 //!
 //! Timers are paused and every read is bounded by a timeout, so the clock auto-advances
-//! through the mock pump's poll interval: the suite is fast and cannot hang. Pump-task
-//! exit itself is owned by T068; here only the observable stream contract is locked —
-//! the stream ends and nothing new arrives after a stop.
+//! through the mock pump's poll interval: the suite is fast and cannot hang. T013 locks
+//! the observable stream contract — the stream ends and nothing new arrives after a
+//! stop; T068 adds the two pump-exit tests at the bottom.
 
 use std::time::Duration;
 
@@ -240,4 +240,63 @@ async fn two_subscriptions_on_one_topic_steer_independently() {
     let events = read(&mut paused_one, 4).await;
     assert_eq!(offsets(&events), vec![0, 1, 2, 3], "the paused one keeps its own cursor: backlog plus what it missed");
     assert_eq!(bodies(&events), vec!["m-0", "m-1", "post-0", "post-1"], "each subscription reads the same log from its own cursor");
+}
+
+/// How many mock pump tasks are live right now (T068 observability counter).
+async fn active_pumps(driver: &MockKafkaDriver) -> u64 {
+    driver.state_handle().read().await.active_pumps()
+}
+
+/// T068: with `follow: true` and a quiet log, the pump's only reader-gone signal
+/// is a failed send — which never happens while nothing is produced. Dropping
+/// just the message stream while keeping the controls must still let the pump
+/// notice the dead reader and exit.
+#[tokio::test(start_paused = true)]
+async fn follow_subscription_exits_when_reader_is_gone() {
+    let driver = driver_with("idle-gone.topic", 1).await;
+    let stream = subscribe(&driver, live_on("idle-gone.topic", Vec::new(), OffsetStart::Earliest, u64::MAX)).await;
+    let controls = stream.controls();
+    drop(stream);
+
+    // Several poll periods on the paused clock. `advance` jumps the clock in one
+    // shot and the pump is only polled once the test yields, so the count is
+    // re-checked after every step until it settles at 0.
+    let mut settled = false;
+    for _ in 0..8 {
+        tokio::time::advance(Duration::from_millis(500)).await;
+        if active_pumps(&driver).await == 0 {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "the pump must exit once its reader is gone");
+    drop(controls);
+}
+
+/// T068 counterweight: while the reader is alive the pump keeps running — the
+/// idle-exit must not shut down ordinary follow streams.
+#[tokio::test(start_paused = true)]
+async fn follow_subscription_survives_while_reader_is_alive() {
+    let driver = driver_with("idle-alive.topic", 1).await;
+    let mut stream = subscribe(&driver, live_on("idle-alive.topic", Vec::new(), OffsetStart::Earliest, u64::MAX)).await;
+
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert_eq!(active_pumps(&driver).await, 1, "a live reader keeps the pump running");
+
+    produce(&driver, "idle-alive.topic", text(1, "live-")).await;
+    let events = read(&mut stream, 1).await;
+    assert_eq!(bodies(&events), vec!["live-0"], "the surviving pump still delivers new messages");
+    assert_eq!(active_pumps(&driver).await, 1, "a delivered message leaves the pump counted");
+
+    drop(stream);
+    // Same settle loop as the exit test above.
+    let mut settled = false;
+    for _ in 0..8 {
+        tokio::time::advance(Duration::from_millis(500)).await;
+        if active_pumps(&driver).await == 0 {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "the pump exits once the reader is gone");
 }

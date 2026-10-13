@@ -60,4 +60,7 @@ if batch.is_empty() {
 - `cargo test --workspace` 全绿
 
 ## 结果（完成后填写，≤5 行）
--
+- 修法：`batch.is_empty()` 的 follow 分支先 `if tx.is_closed() { break; }` 再 `continue`；`MockState` 增 `active_pumps: Arc<AtomicU64>`（`#[serde(skip)]`，手写 `PartialEq` 比较全部持久化字段）+ `PumpGuard` RAII（产品代码，注释标明仅可观测性），guard 在任务体首行创建，所有退出路径必经 drop。
+- RED（counter+guard 就位、无 break）：`follow_subscription_exits_when_reader_is_gone` 失败「the pump must exit once its reader is gone」（计数停在 1）；加 break 后 GREEN。
+- 注意：tokio 1.53 的 `advance` 是一次性跳钟 + `yield_now`，pump 只在测试让出时才被 poll，故断言用「每步 advance 后复查、有界 settle」而非单次 advance 后立即断言。
+- 验收：`cargo test -p kafka-driver` 全绿（64 条）、`clippy --all-targets -D warnings` 零告警、`cargo test --workspace` 全绿。

@@ -117,7 +117,7 @@
 | T053 | 修 `kafka-driver` 首次编译报错（mock：4 个缺 `Default`、`f32: Eq`、`produce` 双重借用、种子夹具循环） | T001,T052 | `cargo check -p kafka-driver --all-targets` | ✅ |
 | T054 | 清 `kafka-driver` 存量 clippy 告警（实测 4 条：`pump.rs` 未读字段 / `contains()` ×2 / 冗余 cast；另 3 处 Default 后赋值） | T053 | `cargo clippy -p kafka-driver --all-targets` 零告警 | ✅（`join` 字段删除；空闲空转转 **T068**） |
 | T055 | 清 `kafka-core` 存量 clippy 告警 2 条（`dto.rs` 的 `map().flatten()`） | T052 | `cargo clippy -p kafka-core --all-targets` 零告警 | ✅ |
-| T068 | Mock pump 在 `follow: true` 空闲时永不退出（`tx.send` 走不到 → 探测不到接收端已亡） | T054 | `cargo test -p kafka-driver`（含 2 条新测试） | ⬜ |
+| T068 | Mock pump 在 `follow: true` 空闲时永不退出（`tx.send` 走不到 → 探测不到接收端已亡） | T054 | `cargo test -p kafka-driver`（含 2 条新测试） | ✅（`tx.is_closed()` 空闲退出；`active_pumps` 可观测计数 + 2 条测试） |
 | T056 | 修 `kafka-app` 首次编译报错 7 个（含 T051/T052 的 2 处连带影响，见卡片表格） | T053 | `cargo check -p kafka-app --all-targets` | ✅（`src/` 已绿；`--all-targets` 剩 9 错拆给 T057/T058） |
 | T057 | 修 `kafka-app` 测试编译错误第一批（`svc_groups`/`driver_guard`/`store_settings`，6 个机械错） | T056 | `--test svc_groups --test driver_guard --test store_settings` | ✅（15+9+8 全绿） |
 | T058 | 修 `kafka-app` 测试编译错误第二批（`svc_clusters`/`svc_topics`，含 `Arc<dyn KafkaDriver>: Debug` 设计信号） | T056 | `--test svc_clusters --test svc_topics` | ✅（`--all-targets` 已 EXIT=0；跑绿后浮出 T066） |
