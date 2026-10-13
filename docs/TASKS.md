@@ -90,7 +90,7 @@
 | T015 | Mock 测试：故障注入 + `DriverEvent` 事件流 | T002 | `--test mock_faults` | ✅（7/7 全绿，无 ignore；mock_groups 8/8 以 `--release` 复跑通过） |
 | T016 | 修复 T010–T015 暴露的 Mock 缺陷（范围由失败用例决定） | T010–T015 | 上述测试全绿 | ✅（静态修复经 57 测试全绿验证；0 失败用例，观测到的 2 处语义漂移登记 T069） |
 | T069 | Mock 语义漂移：list_offsets 未知 topic 静默跳过 + SearchFilter::default 与 serde 默认不一致 | T011,T012 | `cargo test -p kafka-core -p kafka-driver` | ⬜ |
-| T017 | Mock 数据落盘：snapshot JSON 保存/恢复 | T002 | `cargo test -p kafka-driver --test mock_persist` | ⬜ |
+| T017 | Mock 数据落盘：snapshot JSON 保存/恢复 | T002 | `cargo test -p kafka-driver --test mock_persist` | ✅（5/5 全绿；整仓 62 测试 + clippy 零告警） |
 
 ### 阶段 2 · 业务层（`kafka-app`，全部用 Mock 测试）
 

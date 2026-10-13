@@ -1,6 +1,7 @@
 pub mod driver;
 pub mod fault;
 pub(crate) mod pump;
+pub mod persist;
 pub mod state;
 
 pub use driver::MockKafkaDriver;

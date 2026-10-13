@@ -47,6 +47,7 @@ anyhow = "1.0"
 uuid = { version = "1.28", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "7.0"
+tempfile = "3"
 
 # real kafka driver (feature-gated: needs cmake + C toolchain)
 rdkafka = { version = "0.39", features = ["cmake-build", "ssl"] }

@@ -30,4 +30,7 @@
 - `cargo clippy -p kafka-driver` 无新增告警
 
 ## 结果（完成后填写，≤5 行）
--
+- 新增 `mock/persist.rs`：`MockPersistence { path }` 提供 `save`（`.tmp` + rename 原子写）/ `load`（缺文件 `Ok(None)`，损坏 → `DriverError::other` 可读 message）/ `clear`（幂等）。
+- 新增 `tests/mock_persist.rs`（5 测试）：全新 driver 实例 round-trip 全等、缺文件 `Ok(None)`、垃圾文件 typed error、无 `.tmp` 残留 + 覆写、不存在目录保存不 panic。
+- `tempfile = "3"` 加入根 workspace.dependencies + kafka-driver dev-deps。
+- `cargo test -p kafka-driver` 62/62 全绿；`cargo clippy -p kafka-driver --all-targets -- -D warnings` EXIT=0。
