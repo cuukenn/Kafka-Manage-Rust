@@ -58,7 +58,11 @@
   就被解构丢弃，`Drop` 里 abort 会在流交付前掐掉它；由此暴露的空转问题登记为 **T068**。
 - ⬜ 空壳：`webview-bridge`、`main-bin`
 - ✅ T020–T029 已全部转 ✅（各自的验收命令本会话都跑绿，见 §2 索引括号里的计数）。
-  阶段 2 只剩 **T030**（`App` 门面装配 + 冒烟测试）未做。
+- ✅ **阶段 1 + 阶段 2 全部完成（2026-10-14 终审批次）**：阶段 1（T010–T017）+ 缺陷卡
+  **T068**/**T069** + 阶段 2 收尾 **T030**（`App` 门面装配 + 冒烟测试）均转 ✅；
+  `cargo test` → **core 6 / driver 66（65 + 终审批次 C1 暂停态回归 1）/ app 94**，
+  `cargo clippy --workspace --all-targets -- -D warnings` 零告警。
+  下一步关键路径 = **阶段 3**（T031/T032 ⏸待建卡）。
   rust-analyzer 的报错在这个仓库里是过期缓存，不可作为依据。
 - 备注：`kafka-driver` 的 `default = []`，`real`（rdkafka）是 opt-in → 阶段 1/2 无需 librdkafka/cmake。
 - 工具链：rustc 1.99.0 / cargo 1.99.0 / VS Build Tools 2022（MSVC 14.44.35207）/ Windows SDK 10.0.26100 / edition 2024 / rust-version 1.85
@@ -89,7 +93,6 @@
 | T014 | Mock 测试：消费组 / 位点查询 / reset / commit | T002 | `--test mock_groups` | ✅（8/8 全绿，未触发 T016 缺陷） |
 | T015 | Mock 测试：故障注入 + `DriverEvent` 事件流 | T002 | `--test mock_faults` | ✅（7/7 全绿，无 ignore；mock_groups 8/8 以 `--release` 复跑通过） |
 | T016 | 修复 T010–T015 暴露的 Mock 缺陷（范围由失败用例决定） | T010–T015 | 上述测试全绿 | ✅（静态修复经 57 测试全绿验证；0 失败用例，观测到的 2 处语义漂移登记 T069） |
-| T069 | Mock 语义漂移：list_offsets 未知 topic 静默跳过 + SearchFilter::default 与 serde 默认不一致 | T011,T012 | `cargo test -p kafka-core -p kafka-driver` | ✅（未知 topic → `TopicNotFound`；`SearchFilter` 手写 Default 对齐 serde；2 条新测试 RED→GREEN，全量回归全绿） |
 | T017 | Mock 数据落盘：snapshot JSON 保存/恢复 | T002 | `cargo test -p kafka-driver --test mock_persist` | ✅（5/5 全绿；整仓 62 测试 + clippy 零告警） |
 
 ### 阶段 2 · 业务层（`kafka-app`，全部用 Mock 测试）
@@ -118,6 +121,7 @@
 | T054 | 清 `kafka-driver` 存量 clippy 告警（实测 4 条：`pump.rs` 未读字段 / `contains()` ×2 / 冗余 cast；另 3 处 Default 后赋值） | T053 | `cargo clippy -p kafka-driver --all-targets` 零告警 | ✅（`join` 字段删除；空闲空转转 **T068**） |
 | T055 | 清 `kafka-core` 存量 clippy 告警 2 条（`dto.rs` 的 `map().flatten()`） | T052 | `cargo clippy -p kafka-core --all-targets` 零告警 | ✅ |
 | T068 | Mock pump 在 `follow: true` 空闲时永不退出（`tx.send` 走不到 → 探测不到接收端已亡） | T054 | `cargo test -p kafka-driver`（含 2 条新测试） | ✅（`tx.is_closed()` 空闲退出；`active_pumps` 可观测计数 + 2 条测试） |
+| T069 | Mock 语义漂移：list_offsets 未知 topic 静默跳过 + SearchFilter::default 与 serde 默认不一致 | T011,T012 | `cargo test -p kafka-core -p kafka-driver` | ✅（未知 topic → `TopicNotFound`；`SearchFilter` 手写 Default 对齐 serde；2 条新测试 RED→GREEN，全量回归全绿） |
 | T056 | 修 `kafka-app` 首次编译报错 7 个（含 T051/T052 的 2 处连带影响，见卡片表格） | T053 | `cargo check -p kafka-app --all-targets` | ✅（`src/` 已绿；`--all-targets` 剩 9 错拆给 T057/T058） |
 | T057 | 修 `kafka-app` 测试编译错误第一批（`svc_groups`/`driver_guard`/`store_settings`，6 个机械错） | T056 | `--test svc_groups --test driver_guard --test store_settings` | ✅（15+9+8 全绿） |
 | T058 | 修 `kafka-app` 测试编译错误第二批（`svc_clusters`/`svc_topics`，含 `Arc<dyn KafkaDriver>: Debug` 设计信号） | T056 | `--test svc_clusters --test svc_topics` | ✅（`--all-targets` 已 EXIT=0；跑绿后浮出 T066） |
@@ -126,6 +130,8 @@
 | T065 | 修 `ErrorDto::new` 硬编码 `retryable:false`（与 `is_retryable` 分类漂移） | T057 | `cargo test -p kafka-core` + `--test bus --test driver_guard` | ✅ |
 | T066 | 修 `svc_topics.rs:278`「读操作不发事件」断言失败（测试在写入前 drain，自己那条 `TopicChanged{Created}` 还在队列） | T058 | `--test svc_topics --test svc_clusters` | ✅（补断言顺带锁「恰好一条不重复发布」） |
 | T067 | 修 `import_clusters` 覆盖 `updated_at` 导致 export→import→export 不恒等 | T058 | `--test store_clusters --test svc_clusters` | ✅（新增 `Stamp::{Now,Preserve}`） |
+| T078 | Mock `rng()` 每次调用混入 `now_ms`（`seeded()`/`request_seed()` 只管夹具、不给 roll 播种）→ 0<p<1 的故障序列不可复现 | T015 | `cargo test -p kafka-driver` + pinned-seed 中段概率新测试 | ⬜（卡见 `docs/tasks/T078-mock-rng-seed-pinning.md`） |
+| T079 | `restore_json` 整状态替换（含 `connected`/`config`/`brokers` 等 identity 字段）→ 改配置后 restore 拿回旧值 + 幽灵 connected；须在阶段 3 接线 restore 之前落地 | T017 | `cargo test -p kafka-driver --test mock_persist` + 「改配置后 restore 保留 live identity」新测试 | ⬜（卡见 `docs/tasks/T079-mock-snapshot-restore-scope.md`） |
 
 ### 阶段 3 · WebView 桥接（`webview-bridge` + `main-bin`）
 
@@ -227,6 +233,11 @@ T001 ✅ → T052 ✅ → T053 ✅ → {T010..T015} → T016 → T017
 本会话修掉的 4 个行为缺陷：**T064**（`AppEvent` serde 形状漂移 + 漂移守卫）、
 **T065**（`ErrorDto::new` 写死 `retryable:false`）、**T066**（`svc_topics` drain 时序，测试缺陷）、
 **T067**（`import_clusters` 覆盖 `updated_at`，往返不恒等）。
+
+**快照双路径裁定（终审批次）**：应用侧唯一路径是 SQLite 槽位（`store/settings.rs` 的
+`save/load_mock_snapshot`，T022 引入，T038 启动装配时接线）；`MockPersistence`（文件，T017）
+定位为 dev/debug + 导入导出工具，不是应用主路径。
+restore 的恢复范围（整状态 vs 只恢复 data）由 **T079** 裁定，且 T079 必须先于阶段 3 任何接线 restore 的卡片。
 
 阶段 4（前端）与阶段 2/3 可在 T039 之后并行，但**同一会话仍只做一张卡**。
 

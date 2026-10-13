@@ -129,11 +129,16 @@ fn atomic_save_leaves_no_tmp_residue_and_overwrites_cleanly() {
     let path = snapshot_path(&dir);
     let persistence = MockPersistence::new(&path);
 
-    let first = MockState { cluster_id: "first".to_string(), ..MockState::default() };
+    // NB: built by mutation, not `..Default::default()` — `MockState::active_pumps`
+    // is `pub(crate)` since the review batch, so functional record update cannot
+    // name it from this external test crate (E0451).
+    let mut first = MockState::default();
+    first.cluster_id = "first".to_string();
     persistence.save(&first).expect("first save should succeed");
     assert_eq!(persistence.load().expect("load").expect("saved"), first);
 
-    let second = MockState { cluster_id: "second".to_string(), ..MockState::default() };
+    let mut second = MockState::default();
+    second.cluster_id = "second".to_string();
     persistence.save(&second).expect("overwrite save should succeed");
     assert_eq!(persistence.load().expect("load").expect("saved"), second);
 

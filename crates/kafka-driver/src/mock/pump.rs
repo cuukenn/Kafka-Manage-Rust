@@ -60,7 +60,8 @@ impl Drop for PumpGuard {
 /// `JoinHandle` merely detaches the task, which is what the pump relies on: it
 /// terminates by itself when the `StreamCommand` sender drops with the subscription
 /// (`commands.recv()` → `None`), when a send fails because the reader is gone, or —
-/// since T068 — when an idle `follow: true` tick finds the message channel closed.
+/// since T068, and regardless of pause state — when a tick finds the message
+/// channel closed.
 pub(crate) struct PumpHandle {
     pub receiver: mpsc::Receiver<Result<MessageEvent, DriverError>>,
 }
@@ -101,6 +102,14 @@ pub(crate) fn spawn(
                 },
                 _ = interval.tick() => {}
             }
+            // T068 (dead-reader probe): a quiet follow log never reaches a send, so
+            // the closed-channel signal must be checked directly. It runs BEFORE the
+            // paused short-circuit below, otherwise a PAUSED follow subscription
+            // whose message stream is dropped (while a StreamControls clone lives
+            // on) would spin forever on `continue`.
+            if tx.is_closed() {
+                break;
+            }
             if paused {
                 continue;
             }
@@ -133,13 +142,9 @@ pub(crate) fn spawn(
                 if !follow {
                     break;
                 }
-                // T068: a quiet follow log never reaches a send, so the dead-reader
-                // signal must be probed directly — otherwise this task would spin on
-                // the poll interval (one state read-lock per tick) for the whole
-                // driver lifetime even though nobody is listening.
-                if tx.is_closed() {
-                    break;
-                }
+                // The dead-reader probe already ran at the top of this iteration,
+                // before the paused check: a quiet follow tick just waits for the
+                // next message (or the probe to fire on the next tick).
                 continue;
             }
 

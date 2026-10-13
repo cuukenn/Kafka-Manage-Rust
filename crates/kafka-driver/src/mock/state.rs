@@ -212,14 +212,20 @@ pub struct MockState {
     /// Live subscription pumps (T068). Observability-only: the pump task's RAII
     /// guard bumps it on entry and drops it on every exit, so tests can prove a
     /// pump has stopped instead of spinning. Not persisted, never compared.
+    /// `pub(crate)` on purpose: outside the crate only the `active_pumps()`
+    /// accessor exists — no integration test may poke the counter directly.
     #[serde(skip)]
-    pub active_pumps: Arc<AtomicU64>,
+    pub(crate) active_pumps: Arc<AtomicU64>,
 }
 
 fn default_mock_version() -> String {
     "3.7.0-mock".to_string()
 }
 
+/// Compares every PERSISTED field by hand: adding a new persisted field to
+/// `MockState` means adding it HERE too — the snapshot round-trip / losslessness
+/// tests (`tests/mock_persist.rs`) rely on this equality catching any field that
+/// a save→load would drop or alter, and an omitted field would be silently excluded.
 impl PartialEq for MockState {
     fn eq(&self, other: &Self) -> bool {
         self.cluster_id == other.cluster_id

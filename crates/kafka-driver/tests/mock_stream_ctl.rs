@@ -5,7 +5,8 @@
 //! Timers are paused and every read is bounded by a timeout, so the clock auto-advances
 //! through the mock pump's poll interval: the suite is fast and cannot hang. T013 locks
 //! the observable stream contract — the stream ends and nothing new arrives after a
-//! stop; T068 adds the two pump-exit tests at the bottom.
+//! stop; T068 adds the two pump-exit tests, the review batch adds the paused-exit
+//! regression at the bottom.
 
 use std::time::Duration;
 
@@ -299,4 +300,31 @@ async fn follow_subscription_survives_while_reader_is_alive() {
         }
     }
     assert!(settled, "the pump exits once the reader is gone");
+}
+
+/// Review regression (T068 follow-up): the dead-reader probe must run even while
+/// paused. A PAUSED follow subscription whose message stream is dropped — while a
+/// `StreamControls` clone stays alive — must still let its pump notice the dead
+/// reader and exit; otherwise the `if paused { continue; }` short-circuit skips
+/// the `tx.is_closed()` probe and the pump spins forever.
+#[tokio::test(start_paused = true)]
+async fn paused_follow_subscription_exits_when_reader_is_gone() {
+    let driver = driver_with("paused-gone.topic", 1).await;
+    let stream = subscribe(&driver, live_on("paused-gone.topic", Vec::new(), OffsetStart::Earliest, u64::MAX)).await;
+    stream.controls().pause().expect("pause must reach the pump");
+    let controls = stream.controls();
+    drop(stream);
+
+    // Same bounded settle loop as the T068 tests above: advance the paused clock
+    // in poll-period steps until the counter reaches 0.
+    let mut settled = false;
+    for _ in 0..8 {
+        tokio::time::advance(Duration::from_millis(500)).await;
+        if active_pumps(&driver).await == 0 {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "a paused pump must still exit once its reader is gone");
+    drop(controls);
 }

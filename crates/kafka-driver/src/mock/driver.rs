@@ -117,9 +117,16 @@ impl MockKafkaDriver {
 
     /// Replace the current state with a previously taken snapshot.
     pub async fn restore_json(&self, json: &str) -> Result<(), DriverError> {
-        let state: MockState = serde_json::from_str(json)
+        let mut restored: MockState = serde_json::from_str(json)
             .map_err(|e| DriverError::other(format!("mock restore failed: {e}")))?;
-        *self.state.write().await = state;
+        {
+            // Carry the live pump counter over: pumps spawned before this restore
+            // decrement the OLD Arc, so installing a fresh one would make
+            // `active_pumps()` under-report (nobody ever decrements the new Arc).
+            let old = self.state.read().await;
+            restored.active_pumps = old.active_pumps.clone();
+        }
+        *self.state.write().await = restored;
         Ok(())
     }
 

@@ -231,14 +231,17 @@ async fn list_offsets_on_an_empty_topic_has_equal_watermarks() {
 }
 
 /// T069: an explicitly requested unknown topic fails with `TopicNotFound`
-/// (matching `describe_topics`), while a known topic with an empty partitions
-/// list still resolves every one of its partitions.
+/// (matching `describe_topics`), while an empty partitions list resolves every
+/// partition of EVERY topic in the cluster (see `list_offsets` in `mock/driver.rs`).
 #[tokio::test]
 async fn list_offsets_rejects_unknown_topic_but_keeps_known_topic_empty_partition_list() {
     let driver = connected_driver(1).await;
     let mut req = CreateTopicReq::new("known.topic");
     req.num_partitions = 2;
     driver.create_topic(&req).await.expect("create_topic should succeed");
+    let mut second = CreateTopicReq::new("other.topic");
+    second.num_partitions = 3;
+    driver.create_topic(&second).await.expect("second create_topic should succeed");
 
     let unknown = vec![TopicPartition::new("missing.topic", 0)];
     let err = driver
@@ -254,10 +257,20 @@ async fn list_offsets_rejects_unknown_topic_but_keeps_known_topic_empty_partitio
     let all = driver
         .list_offsets(&offsets_req(Vec::new(), OffsetSpec::Earliest))
         .await
-        .expect("a known topic with an empty partitions list still resolves");
-    let mut partitions: Vec<u32> = all.iter().map(|r| r.partition).collect();
-    partitions.sort_unstable();
-    assert_eq!(partitions, vec![0, 1], "an empty partitions list returns every partition of the known topic");
+        .expect("an empty partitions list resolves across the whole cluster");
+    let mut resolved: Vec<(String, u32)> = all.iter().map(|r| (r.topic.clone(), r.partition)).collect();
+    resolved.sort();
+    assert_eq!(
+        resolved,
+        vec![
+            ("known.topic".to_string(), 0),
+            ("known.topic".to_string(), 1),
+            ("other.topic".to_string(), 0),
+            ("other.topic".to_string(), 1),
+            ("other.topic".to_string(), 2),
+        ],
+        "an empty partitions list returns every partition of every topic in the cluster"
+    );
 }
 
 /// Topic ops on a driver that never connected fail with `NotConnected` instead of
