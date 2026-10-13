@@ -1,6 +1,6 @@
 # T016 · 修复 Mock 驱动缺陷（静态审查发现 + 待测试暴露）
 
-**状态**: 🔵进行中（静态修复已做，待编译验证） | **依赖**: T001, T010–T015 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成（2026-10-14 验收全绿） | **依赖**: T001, T010–T015 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 把 `MockKafkaDriver` 里「读代码就能确定是错的」的地方修掉，并登记只能等编译/测试才能确认的遗留项。
@@ -37,3 +37,7 @@
 - 已改 `crates/kafka-driver/src/mock/driver.rs`：补 `will_seed` 字段与 `seeded()`/`request_seed()`/`seed_pending()` 链路、重写 `delete_topics` 的放锁与事件发射、13 处 `require_connected().await?`。
 - 未验证：本机缺 Windows SDK（T001 ⛔），`cargo check/test/clippy` 全部跑不了（`link.exe` 缺失）。
 - 遗留项见上，等 T001 解掉后一次性跑绿再关卡。
+- 2026-10-14 关卡：`cargo check -p kafka-driver` EXIT=0；`cargo test -p kafka-driver --release` **57/57 全绿**
+  （debug 跑 mock_groups 遇 AV 锁 os error 5，属 ledger 已登记 ENV FLAKE）；clippy `-D warnings` 零告警。
+- T010–T015 六张测试卡 **0 失败用例** → 本卡无行为修复可做；测试暴露的 2 处语义漂移登记为 **T069**；
+  `DriverEvent::ConnectionLost` 死 variant 备注留阶段 6（real 驱动应 emit）。
