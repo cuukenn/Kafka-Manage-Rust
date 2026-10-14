@@ -17,6 +17,7 @@ serde.workspace = true
 serde_json.workspace = true
 tao.workspace = true
 wry.workspace = true
+include_dir.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true

@@ -2916,6 +2916,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "include_dir",
  "kafka-app",
  "kafka-core",
  "kafka-driver",

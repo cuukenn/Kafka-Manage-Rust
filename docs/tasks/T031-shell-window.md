@@ -1,6 +1,6 @@
 # T031 — tao+wry 窗口启动 + 静态资源加载（dev/embedded）
 
-状态：⏸待做 ｜ 依赖：T030 ✅ ｜ 验证：手动（窗口打开显示占位页）+ 自动（check/clippy/纯逻辑单测）
+状态：🔶待手动验证 ｜ 依赖：T030 ✅ ｜ 验证：手动（窗口打开显示占位页）+ 自动（check/clippy/纯逻辑单测）
 
 ## 目标
 
@@ -69,3 +69,9 @@ cargo clippy -p webview-bridge -p main-bin --all-targets -- -D warnings
 - 已知 AV 抖动 LNK1104/os error 5 → `--release` 复跑并注明。
 
 ## 结果（≤5 行，完成后填）
+
+- `shell.rs`：tao 0.37 `run_return` + wry 0.57 `app://` 自定义协议；纯逻辑单测 5 个（content-type 表、`..`/绝对/`%2e%2e` 逃逸拒绝、Embedded 读 index.html 含 `shell OK`、DevDir 命中/404、build_response 404）。
+- `cargo test -p webview-bridge` 52 绿（47 旧 + 5 新）；check / clippy `-D warnings` / `build -p main-bin` 全过。
+- 冒烟：`target\debug\main-bin.exe` 后台启动 6s 存活无 panic（stderr 空），已 kill；窗口可见性留用户手动验证。
+- 偏差：`EventLoop::run` 返回 `!`，为满足「关闭→返回 Ok」改用 `run_return`；工作区遗留 handlers.rs/router.rs 纯格式化改动（非本任务）未纳入提交。
+
