@@ -138,7 +138,7 @@
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T031 | tao+wry 窗口启动 + 静态资源加载（dev/embedded） | T030 | 手动：窗口打开显示占位页 | ⏸待建卡 |
-| T032 | Router 内核：envelope 解析 + 命令表 + 假 App 单测 | T030 | `cargo test -p webview-bridge` | ⏸ |
+| T032 | Router 内核：envelope 解析 + 命令表 + 假 App 单测 | T030 | `cargo test -p webview-bridge` | ✅ |
 | T033 | Router：`cluster.*` + `config.*` | T032 | `--test router_cluster` | ⏸ |
 | T034 | Router：`topic.*` + `produce.*` | T032 | `--test router_topic_produce` | ⏸ |
 | T035 | Router：`consume.*` | T032 | `--test router_consume` | ⏸ |

@@ -2915,6 +2915,7 @@ name = "webview-bridge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "kafka-app",
  "kafka-core",
  "kafka-driver",
