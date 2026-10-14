@@ -103,6 +103,17 @@ pub trait KafkaDriver: Send + Sync + 'static {
     fn capabilities(&self) -> DriverCapabilities;
     fn kind(&self) -> DriverKind;
 
+    /// Mock control seam: downcast to the concrete driver.
+    ///
+    /// The mock control plane (`MockKafkaDriver::reset`, `pin_rng_seed`,
+    /// `faults_handle`) is intentionally not on this trait, yet the bridge holds
+    /// only `DynDriver` and `mock.*` commands need to reach it. Overridden by
+    /// `MockKafkaDriver` to return `Some(self)`; every real driver keeps the
+    /// default and must answer `None`.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
+
     /// Subscription to domain events. `None` when the driver does not emit them.
     async fn events(&self) -> Option<tokio::sync::broadcast::Receiver<DriverEvent>> {
         None

@@ -1,6 +1,6 @@
 # T084 · Mock 控制接缝：`KafkaDriver::as_any`（为 T085 `mock.*` 铺路）
 
-**状态**: ⬜未开始 | **依赖**: T032 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T032 | **改动上限**: 3 文件 / 250 行
 
 ## 背景（为什么拆这张卡）
 
@@ -55,4 +55,8 @@ fn as_any(&self) -> Option<&dyn std::any::Any> { None }
 - `cargo check -p kafka-app` 通过（默认实现保证零改动可编译）
 
 ## 结果（完成后填写，≤5 行）
--
+- `KafkaDriver::as_any` 默认 `None`（doc 注明真实驱动必须 `None`），`MockKafkaDriver` 覆写为 `Some(self)`；`GuardedDriver` 未改，转发留 T038。
+- 新增 `crates/kafka-driver/tests/conformance.rs`（契约测试之家）：3 个 tokio 测试——mock 驱动可 downcast、非 mock 驱动 `as_any()` 为 `None`、downcast 后可取 `faults_handle()`。
+- 验证：`cargo test -p kafka-driver` 72 passed（原 69 + 新 3）；`cargo clippy -p kafka-driver --all-targets -- -D warnings` 零告警；`cargo check -p kafka-app` 通过。
+- Windows 未出现 LNK1104 / Access denied 抖动，无需 `--release` 复跑。
+- 改动 3 个源文件（+11 / +7 / 新建 64 行）+ 2 个文档，未触碰 webview-bridge 与 driver_guard。

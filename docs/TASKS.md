@@ -143,7 +143,7 @@
 | T034 | Router：`topic.*` + `produce.*` | T032 | `--test router_topic_produce` | ⏸ |
 | T035 | Router：`consume.*` | T032 | `--test router_consume` | ⏸ |
 | T036 | Router：`group.*`（`mock.*` 拆分为 T084/T085，见 ledger 裁定） | T032 | `--test router_group` | ⬜ |
-| T084 | Mock 控制接缝：`KafkaDriver::as_any`（默认 None + Mock 覆写） | T032 | `cargo test -p kafka-driver`（含 conformance.rs） | ⬜ |
+| T084 | Mock 控制接缝：`KafkaDriver::as_any`（默认 None + Mock 覆写） | T032 | `cargo test -p kafka-driver`（含 conformance.rs） | ✅ |
 | T085 | Router：`mock.*`（经 T084 downcast） | T084 | `--test router_mock` | ⬜ |
 | T037 | 事件泵：总线 → JS `evaluate`（节流/批量） | T032 | `--test event_pump`（假 sink） | ⬜ |
 | T038 | `main.rs` 启动装配：日志、配置目录、App、事件循环 | T031,T033–T037,T085 | 手动：Mock 集群可连通 | ⏸ |

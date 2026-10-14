@@ -861,6 +861,13 @@ impl KafkaDriver for MockKafkaDriver {
         DriverKind::Mock
     }
 
+    /// The only driver that answers the control-plane seam: `mock.*` bridge
+    /// commands (T085) reach `reset()` / `pin_rng_seed()` / `faults_handle()`
+    /// by downcasting through this reference.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
     async fn events(&self) -> Option<broadcast::Receiver<DriverEvent>> {
         Some(self.events.subscribe())
     }
