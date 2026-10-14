@@ -1,6 +1,6 @@
 # T038a — GuardedDriver 接入 + as_any 转发 + Mock 快照存取（SQLite slot）
 
-状态: ⏸　依赖: T084, T085　验证: `cargo test -p kafka-app` + `cargo test --workspace`　类型: 自动
+状态: ✅　依赖: T084, T085　验证: `cargo test -p kafka-app` + `cargo test --workspace`　类型: 自动
 
 拆分裁定 R10: 原 T038 拆为 T038a(本卡,kafka-app 接线,自动验证) + T038b(main.rs 装配,手动)。
 
@@ -42,3 +42,10 @@
 `cargo test -p kafka-app`；`cargo test --workspace`；`cargo clippy -p kafka-app --all-targets -- -D warnings`；rustfmt 仅本卡改动文件（逐文件）。
 
 预算（R8 口径）：2 个代码文件 + 测试文件豁免。
+
+## 结果（2026-10-15）
+
+- `connect` 用 `GuardedDriver::new(driver_for(..))` 包裹；`GuardedDriver::as_any` 转发内层，`mock.*` 接缝穿透护栏。
+- 快照按 T079 接线：connect 前 `load_mock_snapshot`→`restore_json`，disconnect 前 `snapshot_json`→`save_mock_snapshot`；读写失败仅 warn，均走 `store_task`。
+- 新增 `crates/kafka-app/tests/guard_snapshot.rs`（5 用例）。验证：kafka-app 99 绿、workspace 229 绿（bridge 52 / driver 72 不破坏）、clippy 0。
+- 注：store raw 槽只收合法 JSON，「坏快照」用例改用形状非法的 JSON（restore 反序列化失败路径）。

@@ -146,7 +146,7 @@
 | T084 | Mock 控制接缝：`KafkaDriver::as_any`（默认 None + Mock 覆写） | T032 | `cargo test -p kafka-driver`（含 conformance.rs） | ✅ |
 | T085 | Router：`mock.*`（经 T084 downcast） | T084 | `--test router_mock` | ✅ |
 | T037 | 事件泵：总线 → JS `evaluate`（节流/批量） | T032 | `--test event_pump`（假 sink） | ✅ |
-| T038a | GuardedDriver 接入 + as_any 转发 + Mock 快照存取（SQLite slot） | T084,T085 | `cargo test -p kafka-app` + workspace | ⏸ |
+| T038a | GuardedDriver 接入 + as_any 转发 + Mock 快照存取（SQLite slot） | T084,T085 | `cargo test -p kafka-app` + workspace | ✅ |
 | T038b | `main.rs` 启动装配：日志、数据目录、App、Router IPC、事件泵、窗口 | T031,T033–T037,T085,T038a | 手动：Mock 集群可连通 | ⏸ |
 | T039 | 端到端冒烟（Mock）：连接→列 topic→发消息→收事件 | T038b | 手动清单全过 | ⏸ |
 

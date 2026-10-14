@@ -411,6 +411,13 @@ impl KafkaDriver for GuardedDriver {
         self.inner.kind()
     }
 
+    /// Forwarded to the inner driver (T038a): the guard must stay transparent to the
+    /// T084 `as_any` seam, or every `mock.*` control command would stop working the
+    /// moment the guard wraps the driver. Real drivers keep the trait default `None`.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        self.inner.as_any()
+    }
+
     /// Forwarded as-is: the guard does not re-subscribe, so one call is exactly one
     /// subscription on the driver's own event channel.
     async fn events(&self) -> Option<tokio::sync::broadcast::Receiver<kafka_driver::driver::DriverEvent>> {

@@ -15,11 +15,20 @@ use kafka_core::cluster::{ClusterConfig, ClusterInfo, ConnectionState};
 use kafka_core::error::{DriverError, StorageError};
 use kafka_core::ClusterId;
 use kafka_driver::driver::{DynDriver, driver_for};
+use kafka_driver::mock::MockKafkaDriver;
 
 use crate::bus::{AppEvent, EventBus};
+use crate::driver_guard::GuardedDriver;
 use crate::store::Store;
 
 use super::{ServiceError, store_task};
+
+/// Downcast a live driver handle to the mock control plane through the T084 `as_any`
+/// seam. `GuardedDriver` forwards `as_any` to its inner driver (T038a), so this works
+/// whether or not the guard wraps the driver; real drivers answer `None`.
+fn mock_of(driver: &DynDriver) -> Option<&MockKafkaDriver> {
+    driver.as_any().and_then(|any| any.downcast_ref::<MockKafkaDriver>())
+}
 
 /// One row of the cluster list: the saved config plus what the UI needs to render it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -216,7 +225,10 @@ impl ClusterService {
         cfg.validate()?;
 
         self.publish_state(id, ConnectionState::Connecting, None);
-        let driver = driver_for(&cfg);
+        // T038a: every driver handed out by `connect` is guarded (T029), and the
+        // guard forwards `as_any`, so the mock seam below still reaches the mock.
+        let driver: DynDriver = Arc::new(GuardedDriver::new(driver_for(&cfg)));
+        self.restore_mock_snapshot(id, &driver).await;
         match driver.connect(&cfg).await {
             Ok(info) => {
                 slot.set(Some(driver), ConnectionState::Connected);
@@ -244,6 +256,10 @@ impl ClusterService {
             return Ok(());
         };
 
+        // T079: persist the mock state BEFORE the disconnect clears the slot, so a
+        // later connect can restore it; a snapshot failure must not fail disconnect.
+        self.save_mock_snapshot(id, &driver).await;
+
         match driver.disconnect().await {
             Ok(()) => {
                 slot.set(None, ConnectionState::Disconnected);
@@ -270,6 +286,58 @@ impl ClusterService {
             if let Err(err) = self.disconnect(&id).await {
                 tracing::warn!(cluster = %id, %err, "disconnect during shutdown failed");
             }
+        }
+    }
+
+    // ---- mock snapshots (T038a, T079 semantics) ---------------------------
+
+    /// Reload the persisted mock state onto a freshly built driver, BEFORE `connect`
+    /// runs: `restore_json` swaps data only (topics/groups/round-robin/version), so
+    /// the connected flag and cluster identity always come from the live config.
+    /// Any failure — storage read, or bad snapshot data — is a warning: the cluster
+    /// simply connects empty.
+    async fn restore_mock_snapshot(&self, id: &ClusterId, driver: &DynDriver) {
+        let Some(mock) = mock_of(driver) else { return };
+        let stored = store_task(&self.store, {
+            let id = id.clone();
+            move |store| -> Result<_, ServiceError> { Ok(store.load_mock_snapshot(&id)?) }
+        })
+        .await;
+        let snapshot = match stored {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                tracing::warn!(cluster = %id, %err, "mock snapshot load failed, connecting empty");
+                return;
+            }
+        };
+        if let Some(json) = snapshot
+            && let Err(err) = mock.restore_json(&json).await
+        {
+            tracing::warn!(cluster = %id, %err, "mock snapshot restore failed, connecting empty");
+        }
+    }
+
+    /// Snapshot the mock driver into its SQLite slot before the driver is torn down.
+    /// Best effort in both directions: snapshotting or saving may fail, disconnect
+    /// must not.
+    async fn save_mock_snapshot(&self, id: &ClusterId, driver: &DynDriver) {
+        let Some(mock) = mock_of(driver) else { return };
+        let json = match mock.snapshot_json().await {
+            Ok(json) => json,
+            Err(err) => {
+                tracing::warn!(cluster = %id, %err, "mock snapshot failed, keeping previous slot");
+                return;
+            }
+        };
+        let slot_id = id.clone();
+        if let Err(err) =
+            store_task(&self.store, move |store| -> Result<(), ServiceError> {
+                store.save_mock_snapshot(&slot_id, &json)?;
+                Ok(())
+            })
+            .await
+        {
+            tracing::warn!(cluster = %id, %err, "mock snapshot save failed");
         }
     }
 
