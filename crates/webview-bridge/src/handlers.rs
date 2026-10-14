@@ -81,7 +81,7 @@ where
 /// [`StorageError`] — every variant collapses to the `storage` kind — so a stale
 /// cluster id is re-typed as `not_found` here: the UI must treat it as a typo,
 /// not as a failing disk.
-fn service_dto(err: ServiceError) -> ErrorDto {
+pub(crate) fn service_dto(err: ServiceError) -> ErrorDto {
     if let ServiceError::Storage(StorageError::NotFound(_)) = &err {
         return ErrorDto::new(ErrorKind::NotFound, err.to_string());
     }

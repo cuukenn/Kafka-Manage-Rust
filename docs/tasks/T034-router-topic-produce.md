@@ -1,6 +1,6 @@
 # T034 · Router：`topic.*` + `produce.send`
 
-**状态**: ⬜未开始 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 
@@ -57,4 +57,6 @@
 - `cargo check --workspace` 通过
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `handlers_topic.rs`（`register_topic_and_produce`，7 命令全部 `cmd::` 常量）+ `tests/router_topic_produce.rs`（8 个 e2e）；`handlers.rs` 仅将 `service_dto` 提为 `pub(crate)` 供复用。
+- `XPayload<R>` 泛型 + `#[serde(flatten)]` 覆盖 6 个 topic 命令；`ProducePayload{clusterId,requests}` 走 `send_batch`（R6）。
+- 验证：`cargo test -p webview-bridge` 23 通过（15 旧 + 8 新）；clippy `--all-targets -D warnings` 零告警；`cargo check --workspace` 通过。
