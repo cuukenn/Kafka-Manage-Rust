@@ -152,7 +152,30 @@ async fn a_corrupt_snapshot_warns_and_connects_empty() {
     );
 }
 
-/// 5.（补充）完整闭环：connect → seed → disconnect → 再 connect → 数据回来了，
+/// 5.（R11）delete 清快照槽：connect+seed → disconnect 存快照（槽有值）→ delete →
+/// `load_mock_snapshot` 为 None，孤儿快照不得残留。
+#[tokio::test]
+async fn delete_clears_the_mock_snapshot_slot() {
+    let (svc, store) = harness();
+    let id = save_mock(&svc, "snap-delete").await;
+
+    svc.connect(&id).await.expect("connect");
+    let mock = mock_of(&svc.driver(&id).expect("live driver"));
+    mock.seed().await;
+    svc.disconnect(&id).await.expect("disconnect saves the snapshot");
+    assert!(
+        store.load_mock_snapshot(&id).expect("slot").is_some(),
+        "snapshot must exist before delete"
+    );
+
+    assert!(svc.delete(&id).await.expect("delete"));
+    assert!(
+        store.load_mock_snapshot(&id).expect("slot").is_none(),
+        "delete must clear the mock snapshot slot (R11)"
+    );
+}
+
+/// 6.（补充）完整闭环：connect → seed → disconnect → 再 connect → 数据回来了，
 /// 且 `describe_topics` 经护栏可查（快照里的 topic 是活数据）。
 #[tokio::test]
 async fn snapshot_round_trip_survives_disconnect_and_reconnect() {

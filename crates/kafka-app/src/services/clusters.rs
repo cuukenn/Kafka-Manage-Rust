@@ -191,6 +191,11 @@ impl ClusterService {
         let removed = store_task(&self.store, move |store| -> Result<_, ServiceError> {
             let removed = store.delete_cluster(&id)?;
             store.forget_recent(&id)?;
+            // R11: drop the mock snapshot slot too, so an orphan snapshot can never
+            // resurrect stale state; its failure must not fail the delete (warn).
+            if let Err(err) = store.clear_mock_snapshot(&id) {
+                tracing::warn!(cluster = %id, %err, "failed to clear mock snapshot on delete");
+            }
             Ok(removed)
         })
         .await?;
