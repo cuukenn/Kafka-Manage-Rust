@@ -1,6 +1,6 @@
 # T085 · Router：`mock.*`（reset / seed / faults）
 
-**状态**: ⬜未开始 | **依赖**: T084 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T084 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 
@@ -55,4 +55,7 @@
 - `cargo check --workspace` 通过
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `handlers_mock.rs`（108 行）+ `tests/router_mock.rs`（4 个 e2e 测试），`lib.rs` 加 mod；`handlers.rs` 未动。
+- `handler()` 裁定：**保留**——`register_with`（handlers.rs:41）实际在调用它，T033 评审「无调用者」不实。
+- 验证：`cargo test -p webview-bridge` 40 全绿（36 旧 + 4 新）；clippy `--all-targets -D warnings` 零告警；`cargo check --workspace` 通过。
+- 偏差：`mock.reset` 会清空 topics，测试在 reset 后重建 topic 再验证连接存活；`FaultsPayload` 需 `Default` derive（serde 容器级 default 要求）。
