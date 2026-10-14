@@ -1,6 +1,6 @@
 # T036 · Router：`group.*`（mock.* 已拆分为 T084/T085）
 
-**状态**: ⬜未开始 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 
@@ -59,4 +59,8 @@
 - `cargo check --workspace` 通过
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `handlers_group.rs`（100 行）：4 命令全部用 `cmd::` 常量注册，复用 T033 helper 与 T034 的 `XPayload<R>` flatten 模板；`lib.rs` +1 行 mod。
+- 新建 `tests/router_group.rs`（7 个端到端测试，均经 `router.handle`）：读路径闭环、`ids` 缺省=全部、dry-run 不发 `GROUP_CHANGED`、写入 reset 恰好发 1 条、`not_connected`/`invalid_config`/未知组。
+- 验证：`cargo test -p webview-bridge` 36 全绿（原 29 + 新 7）、`cargo clippy -p webview-bridge --all-targets -- -D warnings` 零告警、`cargo check --workspace` 通过。
+- 偏差 1：`driver_for` 建的是空 mock（`MockKafkaDriver::new()`，非 `seeded()`），故预置组由测试经 T084 的 `as_any` seam 调 `MockKafkaDriver::seed()` 注入；T085 `mock.seed` 上线后可换成纯 wire 夹具。
+- 偏差 2（wire 事实）：`spec` 沿用 `ResetSpec` 的相邻标签 serde 形状 `{"type":"earliest"}` / `{"type":"toOffset","value":1}`（与 T035 `OffsetStart` 同一约定）。
