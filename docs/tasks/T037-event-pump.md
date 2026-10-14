@@ -1,6 +1,6 @@
 # T037 · 事件泵：总线 → sink（节流/批量，假 sink 单测）
 
-**状态**: ⬜未开始 | **依赖**: T032 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T032 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 
@@ -64,4 +64,8 @@ impl PumpHandle {
 - `cargo check --workspace` 通过
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `pump.rs`（146 行）：`EventSink`/`EventPump::spawn`/`PumpHandle::shutdown` 按钉死形状实现；常量 `MAX_BATCH_EVENTS=200`、`MAX_BATCH_DELAY=50ms`；`lib.rs` +1 行 `pub mod pump;`。
+- 新建 `tests/event_pump.rs`：7 个 `start_paused` 虚拟时钟测试（envelope 三字段、25ms 不刷/50ms 刷 3 条、250 条首批恰 200、shutdown 不丢 5 条且 `num_alive_tasks` 回落、Closed 刷残余退出、双泵 broadcast 全量、Lagged(4) 后继续泵）。
+- 验证：`cargo test -p webview-bridge` 47 全绿（原 40 + 新 7）；`cargo clippy -p webview-bridge --all-targets -- -D warnings` 零告警；`cargo check --workspace` 通过；仅 `rustfmt` 本卡两文件。
+- 偏差 1：`shutdown()` 走 biased select 时先 `try_recv` 排空已入队事件再刷，否则「推 5 条后立即 shutdown」会丢批（测试 4 要求不丢）。
+- 偏差 2：额外加 `Closed`/`Lagged` 两个测试（共 7 个，超出 ≥5 下限），未新增依赖、未碰 wry/tao。
