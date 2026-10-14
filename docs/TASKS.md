@@ -146,8 +146,9 @@
 | T084 | Mock 控制接缝：`KafkaDriver::as_any`（默认 None + Mock 覆写） | T032 | `cargo test -p kafka-driver`（含 conformance.rs） | ✅ |
 | T085 | Router：`mock.*`（经 T084 downcast） | T084 | `--test router_mock` | ✅ |
 | T037 | 事件泵：总线 → JS `evaluate`（节流/批量） | T032 | `--test event_pump`（假 sink） | ✅ |
-| T038 | `main.rs` 启动装配：日志、配置目录、App、事件循环 | T031,T033–T037,T085 | 手动：Mock 集群可连通 | ⏸ |
-| T039 | 端到端冒烟（Mock）：连接→列 topic→发消息→收事件 | T038 | 手动清单全过 | ⏸ |
+| T038a | GuardedDriver 接入 + as_any 转发 + Mock 快照存取（SQLite slot） | T084,T085 | `cargo test -p kafka-app` + workspace | ⏸ |
+| T038b | `main.rs` 启动装配：日志、数据目录、App、Router IPC、事件泵、窗口 | T031,T033–T037,T085,T038a | 手动：Mock 集群可连通 | ⏸ |
+| T039 | 端到端冒烟（Mock）：连接→列 topic→发消息→收事件 | T038b | 手动清单全过 | ⏸ |
 
 ### 阶段 4 · 前端 UI（HTML + Vue3 + Tailwind，全部对接 Mock）
 
@@ -219,7 +220,7 @@
 
 ```
 T001 ✅ → T052 ✅ → T053 ✅ → {T010..T015} → T016 → T017
-                            ↘ T020 → T021/T022 → T024 → {T025..T029} → T030 → T032 → {T033..T037} → T038 → T039 → 阶段4
+                            ↘ T020 → T021/T022 → T024 → {T025..T029} → T030 → T032 → {T033..T037} → T038a → T038b → T039 → 阶段4
                             ↘ T056 ✅ → T057 ✅ → {T064 ✅, T065 ✅} → T058 ✅ → {T066 ✅, T067 ✅} → T059 ✅ → T054 ✅ → T055 ✅ → T002 ✅ 基线已提交
 ```
 
@@ -237,7 +238,7 @@ T001 ✅ → T052 ✅ → T053 ✅ → {T010..T015} → T016 → T017
 **T067**（`import_clusters` 覆盖 `updated_at`，往返不恒等）。
 
 **快照双路径裁定（终审批次）**：应用侧唯一路径是 SQLite 槽位（`store/settings.rs` 的
-`save/load_mock_snapshot`，T022 引入，T038 启动装配时接线）；`MockPersistence`（文件，T017）
+`save/load_mock_snapshot`，T022 引入，T038a 接线）；`MockPersistence`（文件，T017）
 定位为 dev/debug + 导入导出工具，不是应用主路径。
 restore 的恢复范围（整状态 vs 只恢复 data）由 **T079** 裁定，且 T079 必须先于阶段 3 任何接线 restore 的卡片。
 
