@@ -5,9 +5,9 @@
 //! The clock is paused in every test and every read is bounded, so there are no
 //! wall-clock sleeps and nothing can hang. Latency is measured with
 //! `tokio::time::Instant`, which reports an injected sleep as virtual time; only lower
-//! bounds are asserted, per the card. Probability rolls are only exercised at their
-//! deterministic extremes (`0.0` never fails, `1.0` always fails), so no test depends on
-//! the seed.
+//! bounds are asserted, per the card. Probability rolls are exercised at their
+//! deterministic extremes (`0.0` never fails, `1.0` always fails) or pinned through
+//! `pin_rng_seed` (T078), so no test depends on the wall clock.
 
 use std::time::Duration;
 
@@ -236,4 +236,73 @@ async fn connection_faults_leave_the_cluster_disconnected() {
     let info = driver.cluster_info().await.expect_err("no cluster while disconnected");
     assert_eq!(info.kind(), ErrorKind::NotConnected);
     driver.disconnect().await.expect("disconnecting twice is a no-op");
+}
+
+/// A fresh, seeded mock cluster with the fault RNG pinned to `seed` (T078).
+async fn pinned_driver(name: &str, seed: u64) -> MockKafkaDriver {
+    let driver = MockKafkaDriver::seeded();
+    driver.pin_rng_seed(seed);
+    driver.connect(&ClusterConfig::mock(name)).await.expect("connect should succeed");
+    driver
+}
+
+/// T078: `pin_rng_seed` restarts the roll counter and drops the wall-clock mix, so two
+/// fresh instances pinned to the same seed replay the exact same mid-range (`0 < p < 1`)
+/// failure sequence — and the sequence genuinely exercises both outcomes, unlike the
+/// `0.0`/`1.0` extremes the other tests rely on.
+#[tokio::test(start_paused = true)]
+async fn pinned_seed_replays_identical_midrange_failure_sequences() {
+    const SEED: u64 = 0x0785_EED5;
+    let mut patterns = Vec::new();
+    for name in ["pinned-fail-a", "pinned-fail-b"] {
+        let driver = pinned_driver(name, SEED).await;
+        driver
+            .set_faults(FaultInjection {
+                fail_probability: 0.5,
+                fail_operation: Some("produce".into()),
+                ..Default::default()
+            })
+            .await;
+        let mut pattern = Vec::with_capacity(40);
+        for attempt in 0..40u32 {
+            pattern.push(produce_text(&driver, "orders", attempt).await.is_ok());
+        }
+        patterns.push(pattern);
+    }
+    assert_eq!(patterns[0], patterns[1], "same pinned seed must replay the same failure pattern");
+    let failures = patterns[0].iter().filter(|ok| !**ok).count();
+    assert!(
+        failures > 0 && failures < patterns[0].len(),
+        "p=0.5 must roll both outcomes, got {failures}/40 failures: {:?}",
+        patterns[0]
+    );
+}
+
+/// T078: every faulted driver call rolls the RNG once for injected latency; with the
+/// seed pinned, two fresh instances observe identical multi-roll sequences — the exact
+/// rolled milliseconds, read off virtual time — and the sequence genuinely jitters.
+#[tokio::test(start_paused = true)]
+async fn pinned_seed_repeats_the_multi_roll_latency_sequence() {
+    const SEED: u64 = 0x51EE_D00D;
+    let mut sequences = Vec::new();
+    for name in ["pinned-rolls-a", "pinned-rolls-b"] {
+        let driver = pinned_driver(name, SEED).await;
+        driver
+            .set_faults(FaultInjection { latency: LatencyRange { min_ms: 1, max_ms: 49 }, ..Default::default() })
+            .await;
+        let mut rolled = Vec::with_capacity(12);
+        for _ in 0..12 {
+            let started = tokio::time::Instant::now();
+            driver.list_topics().await.expect("list_topics should succeed");
+            rolled.push(started.elapsed().as_millis() as u64);
+        }
+        sequences.push(rolled);
+    }
+    assert_eq!(sequences[0], sequences[1], "same pinned seed must replay the same roll sequence");
+    assert!(sequences[0].iter().all(|ms| (1..=49).contains(ms)), "rolls must stay in range: {:?}", sequences[0]);
+    assert!(
+        sequences[0].iter().min() != sequences[0].iter().max(),
+        "the sequence must jitter, not repeat one value: {:?}",
+        sequences[0]
+    );
 }

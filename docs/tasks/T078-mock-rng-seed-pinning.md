@@ -1,6 +1,6 @@
 # T078 · Mock `rng()` 未被 seed 固定（每次都混入 `now_ms`）
 
-**状态**: ⬜未开始 | **依赖**: T015 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T015 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 `MockKafkaDriver::rng()`（`crates/kafka-driver/src/mock/driver.rs` ~:133-136，本批 C3 之前为 ~:126-129）
@@ -34,4 +34,8 @@
 - `cargo clippy -p kafka-driver --all-targets -- -D warnings` 零告警
 
 ## 结果（完成后填写，≤5 行）
--
+- `MockKafkaDriver::pin_rng_seed(seed)`：重置 roll 计数器 + `rng_pinned` 置位；`rng()` pin 时只用计数器派生，跳过 `now_ms` 混入；未 pin 路径逐字节不变。
+- 新增 2 测试（`mock_faults.rs`）：p=0.5 中段失败序列、1..=49ms 延迟抖动序列——各在两个同 seed 独立实例上完全复现，且断言两种结果都出现（非极端值）。
+- RED 证据：pin 之前 3ms 时钟间隔即让两次同调度的 0.5 序列分叉（`EQUAL=false`）；未 pin 的 scratch 复跑 fix 后仍分叉 → 未 pin 行为不变。
+- `cargo test -p kafka-driver` 68/68 全绿；`cargo clippy -p kafka-driver --all-targets -- -D warnings` 零告警。
+- 未动 `FaultInjection` 语义、`restore_json`/快照范围（T079）。

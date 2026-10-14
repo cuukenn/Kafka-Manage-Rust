@@ -130,7 +130,7 @@
 | T065 | 修 `ErrorDto::new` 硬编码 `retryable:false`（与 `is_retryable` 分类漂移） | T057 | `cargo test -p kafka-core` + `--test bus --test driver_guard` | ✅ |
 | T066 | 修 `svc_topics.rs:278`「读操作不发事件」断言失败（测试在写入前 drain，自己那条 `TopicChanged{Created}` 还在队列） | T058 | `--test svc_topics --test svc_clusters` | ✅（补断言顺带锁「恰好一条不重复发布」） |
 | T067 | 修 `import_clusters` 覆盖 `updated_at` 导致 export→import→export 不恒等 | T058 | `--test store_clusters --test svc_clusters` | ✅（新增 `Stamp::{Now,Preserve}`） |
-| T078 | Mock `rng()` 每次调用混入 `now_ms`（`seeded()`/`request_seed()` 只管夹具、不给 roll 播种）→ 0<p<1 的故障序列不可复现 | T015 | `cargo test -p kafka-driver` + pinned-seed 中段概率新测试 | ⬜（卡见 `docs/tasks/T078-mock-rng-seed-pinning.md`） |
+| T078 | Mock `rng()` 每次调用混入 `now_ms`（`seeded()`/`request_seed()` 只管夹具、不给 roll 播种）→ 0<p<1 的故障序列不可复现 | T015 | `cargo test -p kafka-driver` + pinned-seed 中段概率新测试 | ✅（2/2 全绿：p=0.5 序列 + 延迟抖动序列均跨实例复现；套件 68/68；clippy 零告警） |
 | T079 | `restore_json` 整状态替换（含 `connected`/`config`/`brokers` 等 identity 字段）→ 改配置后 restore 拿回旧值 + 幽灵 connected；须在阶段 3 接线 restore 之前落地 | T017 | `cargo test -p kafka-driver --test mock_persist` + 「改配置后 restore 保留 live identity」新测试 | ⬜（卡见 `docs/tasks/T079-mock-snapshot-restore-scope.md`） |
 
 ### 阶段 3 · WebView 桥接（`webview-bridge` + `main-bin`）

@@ -41,6 +41,8 @@ pub struct MockKafkaDriver {
     state: Arc<RwLock<MockState>>,
     faults: Arc<RwLock<FaultInjection>>,
     seed: Arc<AtomicU64>,
+    /// Set by `pin_rng_seed()`: skips the wall-clock mix in `rng()` (T078).
+    rng_pinned: Arc<AtomicBool>,
     /// Set by `seeded()` / `request_seed()`, consumed by `connect`.
     will_seed: Arc<AtomicBool>,
     events: broadcast::Sender<DriverEvent>,
@@ -60,6 +62,7 @@ impl MockKafkaDriver {
             state: Arc::new(RwLock::new(MockState::default())),
             faults: Arc::new(RwLock::new(FaultInjection::default())),
             seed: Arc::new(AtomicU64::new(now_ms() as u64)),
+            rng_pinned: Arc::new(AtomicBool::new(false)),
             will_seed: Arc::new(AtomicBool::new(false)),
             events,
         }
@@ -132,7 +135,13 @@ impl MockKafkaDriver {
 
     fn rng(&self) -> Rng {
         let counter = self.seed.fetch_add(0x9E37_79B9, Ordering::Relaxed);
-        Rng::new(counter ^ (now_ms() as u64).rotate_left(17))
+        if self.rng_pinned.load(Ordering::Relaxed) {
+            // Pinned (test determinism, T078): the counter alone derives the roll,
+            // so the same pinned seed replays the same sequence on any instance.
+            Rng::new(counter)
+        } else {
+            Rng::new(counter ^ (now_ms() as u64).rotate_left(17))
+        }
     }
 
     /// Applies injected latency then injected failure for `operation`.
@@ -204,6 +213,16 @@ impl MockKafkaDriver {
     /// True when a fixture load is still pending (consumed by `connect`).
     pub fn seed_pending(&self) -> bool {
         self.will_seed.load(Ordering::SeqCst)
+    }
+
+    /// Pins the fault-injection RNG to `seed` **for test determinism**: the roll
+    /// counter restarts at `seed` and `rng()` stops mixing in the wall clock, so
+    /// the same seed replays the same latency/failure sequence on any instance —
+    /// including mid-range probabilities (`0.0 < p < 1.0`). Unpinned drivers keep
+    /// the wall-clock mix and behave exactly as before (T078).
+    pub fn pin_rng_seed(&self, seed: u64) {
+        self.seed.store(seed, Ordering::SeqCst);
+        self.rng_pinned.store(true, Ordering::SeqCst);
     }
 }
 
