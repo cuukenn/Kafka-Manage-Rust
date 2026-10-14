@@ -54,7 +54,20 @@ impl Router {
             let msg = format!("no handler registered for command '{cmd}'");
             return ResponseEnvelope::err_dto(id, ErrorDto::new(ErrorKind::Internal, msg));
         };
-        match handler(payload).await {
+        // The handler runs on a spawned task as a panic boundary: a panicking
+        // handler must not unwind through `Handle::block_on` in the wry
+        // protocol callback and kill the app — its JoinError becomes an
+        // Internal error response instead.
+        let result = match tokio::spawn(handler(payload)).await {
+            Ok(result) => result,
+            Err(join_err) => {
+                return ResponseEnvelope::err_dto(
+                    id,
+                    ErrorDto::new(ErrorKind::Internal, format!("handler panicked: {join_err}")),
+                );
+            }
+        };
+        match result {
             Ok(data) => ResponseEnvelope::ok(id, data),
             Err(error) => ResponseEnvelope::err_dto(id, error),
         }

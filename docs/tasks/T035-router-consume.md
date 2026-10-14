@@ -44,7 +44,7 @@
 
 1. 6 个命令全部用 `cmd::` 常量注册。
 2. 端到端（经 `router.handle`）：connect mock 集群 → `topic.create` + `produce.send` 造数据 →
-   `consume.subscribe`（`follow:false`, `start:"earliest"`, `maxMessages` 有界）→ data 里 `subscriptionId` 非空、
+   `consume.subscribe`（`follow:false`, `start:{"type":"earliest"}`（adjacently-tagged 实际 wire 形状，见下方偏差）, `maxMessages` 有界）→ data 里 `subscriptionId` 非空、
    `state` 为 running → 等消息经总线送达（`app.bus().subscribe()` 收 `MessageReceived`，或轮询
    `consume.list` 的 `delivered`）→ `consume.unsubscribe` → `true`，再 unsubscribe → `false`。
 3. `consume.pause` → `state` 变 `paused`（用 `consume.list` 断言）；`consume.resume` → `running`；

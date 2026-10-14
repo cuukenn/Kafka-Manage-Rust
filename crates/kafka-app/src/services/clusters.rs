@@ -315,10 +315,12 @@ impl ClusterService {
                 return;
             }
         };
-        if let Some(json) = snapshot
-            && let Err(err) = mock.restore_json(&json).await
-        {
-            tracing::warn!(cluster = %id, %err, "mock snapshot restore failed, connecting empty");
+        // Nested if-let, not a let-chain: let-chains need rustc ≥1.88 and the
+        // workspace declares rust-version = "1.85".
+        if let Some(json) = snapshot {
+            if let Err(err) = mock.restore_json(&json).await {
+                tracing::warn!(cluster = %id, %err, "mock snapshot restore failed, connecting empty");
+            }
         }
     }
 

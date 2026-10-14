@@ -16,11 +16,11 @@
    → 返回 `{"id":"1","ok":true,...}`。
 3. **坏输入**：body 传 `'{bad'` → `ok:false` 且 `error.kind` 为 parse 类。
 4. **连接 Mock 集群**：`cluster.save`（mock 配置）→ `cluster.connect` → `ok:true`；`cluster.list` 显示已连接。
-5. **播种+列 topic**：`mock.seed` → `topic.list` 出现预置 topic（如 `checkout-service`、`analytics-etl`）。
+5. **建 topic+列 topic**：`topic.create`（已连接集群 + topic 名）→ `ok:true`；`topic.list` 出现刚创建的 topic。注：`mock.seed` 只固定 RNG 种子（故障注入序列可复现），**不**播种预置 topic；全新 mock 集群连接后 `topic.list` 为空（fixture 播种仅测试内可用）。
 6. **发消息**：`produce.send`（目标 topic）→ `ok:true` 且返回 offset。
 7. **收事件**：`consume.subscribe` 后 Console 出现 `__bridgeEvents` 批量数组（含刚发的消息，base64+utf8 双通道）；批量节流生效（多条时一次数组 ≤200）。
 8. **故障注入**：`mock.faults` 注入后一次调用得到 `ok:false` + 对应 kind；`mock.reset` 后恢复。
-9. **快照持久（T038a）**：关窗 → 再开 → 不跑 `mock.seed`，`topic.list` 仍有上次播种的 topic（SQLite slot 恢复）。
+9. **快照持久（T038a）**：基于第 5 步创建的 topic：关窗 → 再开 → 连接同一集群，不重新 `topic.create`，`topic.list` 仍有该 topic（SQLite slot 恢复）。
 10. **干净退出**：关窗后进程退出无挂起；stderr 日志见 pump/App 关闭记录；再启动正常。
 
 ## 记录

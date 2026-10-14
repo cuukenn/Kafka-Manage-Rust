@@ -54,7 +54,7 @@
 
 `cargo run -p main-bin` → 窗口打开显示占位页 → F12 devtools console：
 `fetch('app://localhost/rpc',{method:'POST',body:JSON.stringify({id:'1',cmd:'cluster.list',payload:{}})}).then(r=>r.text()).then(console.log)` → `{"id":"1","ok":true,...}`；
-再 `cluster.save`(mock 配置)+`cluster.connect`+`mock.seed`+`topic.list` 见预置；`produce.send` 后 console 出现 `__bridgeEvents` 批量事件。
+再 `cluster.save`(mock 配置)+`cluster.connect`+`topic.create`+`topic.list` 见刚创建的 topic（注：`mock.seed` 仅固定 RNG 种子、不播种预置 topic，全新 mock 集群连接后为空）；`produce.send` 后 console 出现 `__bridgeEvents` 批量事件。
 
 ## 验证命令
 

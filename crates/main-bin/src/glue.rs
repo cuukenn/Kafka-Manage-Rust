@@ -100,10 +100,11 @@ pub fn ready_hook(handle: &Handle, app: App) -> OnReady {
     })
 }
 
-/// What the run loop calls on `CloseRequested`: pump first, so queued events
-/// still reach the page, then the App (subscriptions stopped, clusters
-/// disconnected). Blocking the window thread here is intended — it is the last
-/// thing the loop does before exiting.
+/// What the run loop calls on `CloseRequested`: pump first, then the App
+/// (subscriptions stopped, clusters disconnected). Batches the pump has not
+/// flushed when the window loop exits never reach the page — harmless, the
+/// page is closing anyway. Blocking the window thread here is intended — it
+/// is the last thing the loop does before exiting.
 struct ShutdownGuard {
     pump: PumpHandle,
     app: App,

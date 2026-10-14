@@ -164,3 +164,28 @@ async fn concurrent_requests_complete_independently_without_cross_talk() {
     assert_eq!(resp_b.id, "b-2");
     assert_eq!(resp_b.data, Some(json!({"handler": "B"})));
 }
+
+/// Item 7 (final review I3): a panicking handler is contained by the router's
+/// spawn boundary — the wire contract holds (`ok:false`, kind `internal`) and
+/// the process survives: the router keeps routing afterwards.
+#[tokio::test]
+async fn panicking_handler_becomes_internal_error_and_process_survives() {
+    let boom: Handler = Arc::new(|_: Value| -> BoxFuture<'static, Fallible> {
+        Box::pin(async move { panic!("handler blew up on purpose") })
+    });
+    let router = Router::new();
+    router.register("panic.test", boom);
+    router.register(cmd::CLUSTER_LIST, boxed(Ok));
+
+    let resp = router.handle(r#"{"id":"p1","cmd":"panic.test","payload":{}}"#).await;
+    assert!(!resp.ok);
+    assert_eq!(resp.id, "p1");
+    let error = resp.error.expect("error body");
+    assert_eq!(error.kind, ErrorKind::Internal.as_str());
+    assert!(error.message.contains("handler panicked"), "message says panic: {}", error.message);
+
+    // Process survives: routing still works after the contained panic.
+    let resp = router.handle(r#"{"id":"p2","cmd":"cluster.list"}"#).await;
+    assert!(resp.ok);
+    assert_eq!(resp.id, "p2");
+}

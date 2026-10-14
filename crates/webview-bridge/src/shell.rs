@@ -231,17 +231,18 @@ impl EventSink for WrySink {
     }
 }
 
-/// One plain-text response body (the RPC answer, or a status line).
+/// One JSON response body (the RPC answer; body is always JSON — phase-4
+/// frontends call `r.json()` on it).
 fn text_response(status: u16, body: String) -> Response<Cow<'static, [u8]>> {
     Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header(CONTENT_TYPE, "application/json; charset=utf-8")
         .body(Cow::Owned(body.into_bytes()))
         .expect("plain text response is valid")
 }
 
 /// Route one `app://` request for a bridged window: `POST /rpc` hands its body
-/// to `rpc` and answers 200 `text/plain` with the router's response JSON;
+/// to `rpc` and answers 200 `application/json` with the router's response JSON;
 /// every other request is the usual static asset lookup (404 otherwise).
 /// Pure logic: no window required, directly unit-testable.
 fn bridge_response(
@@ -469,7 +470,7 @@ mod tests {
             .expect("request");
         let resp = bridge_response(&PageSource::Embedded, &rpc, &req);
         assert_eq!(resp.status(), 200);
-        assert_eq!(resp.headers()[CONTENT_TYPE], "text/plain; charset=utf-8");
+        assert_eq!(resp.headers()[CONTENT_TYPE], "application/json; charset=utf-8");
         assert_eq!(
             std::str::from_utf8(resp.body()).unwrap(),
             r#"echo:{"id":"1","cmd":"cluster.list"}"#

@@ -3,6 +3,7 @@
 //! router, Rust events pushed in batches to `window.__bridgeEvents`.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use webview_bridge::shell::{DEV_DIR_ENV, PageSource, WindowOptions, run_window_with};
 
@@ -34,6 +35,9 @@ fn main() -> anyhow::Result<()> {
         rpc,
         glue::ready_hook(rt.handle(), app),
     )?;
-    drop(rt);
+    // Bounded shutdown instead of bare drop: drains spawned tasks (e.g. the
+    // mock pump) with a cap, so a T068-style idle-exit defect cannot hang
+    // process exit on `Runtime::drop`.
+    rt.shutdown_timeout(Duration::from_secs(5));
     Ok(())
 }
