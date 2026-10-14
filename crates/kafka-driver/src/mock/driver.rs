@@ -118,18 +118,29 @@ impl MockKafkaDriver {
             .map_err(|e| DriverError::other(format!("mock snapshot failed: {e}")))
     }
 
-    /// Replace the current state with a previously taken snapshot.
+    /// Restore the DATA portion of a previously taken snapshot (T079): `topics`,
+    /// `groups`, `round_robin` and `version` come from the snapshot, while
+    /// identity/connection fields (`connected`/`config`/`brokers`/`cluster_id`/
+    /// `controller_id`) and the live `active_pumps` counter keep the running
+    /// driver's current values — restoring after a config edit must not
+    /// resurrect stale brokers nor a phantom `connected` flag. RNG pin state
+    /// (`seed`/`rng_pinned`) lives on the driver itself, outside `MockState`,
+    /// so a restore never touches it either (live config, not data).
     pub async fn restore_json(&self, json: &str) -> Result<(), DriverError> {
-        let mut restored: MockState = serde_json::from_str(json)
+        let restored: MockState = serde_json::from_str(json)
             .map_err(|e| DriverError::other(format!("mock restore failed: {e}")))?;
-        {
-            // Carry the live pump counter over: pumps spawned before this restore
-            // decrement the OLD Arc, so installing a fresh one would make
-            // `active_pumps()` under-report (nobody ever decrements the new Arc).
-            let old = self.state.read().await;
-            restored.active_pumps = old.active_pumps.clone();
-        }
-        *self.state.write().await = restored;
+        // One write lock: the data swap must be atomic for concurrent readers.
+        let mut state = self.state.write().await;
+        // Persisted data ← snapshot (see the field partition on `MockState`).
+        state.topics = restored.topics;
+        state.groups = restored.groups;
+        state.round_robin = restored.round_robin;
+        state.version = restored.version;
+        // Live identity/connection stays untouched: `cluster_id`, `controller_id`,
+        // `brokers`, `connected`, `config`.
+        // Live pump counter stays untouched: pumps spawned before this restore
+        // decrement the CURRENT Arc, so installing a fresh one would make
+        // `active_pumps()` under-report (nobody ever decrements the new Arc).
         Ok(())
     }
 

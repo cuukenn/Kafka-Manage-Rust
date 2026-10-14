@@ -54,8 +54,9 @@ async fn connected_with_log() -> MockKafkaDriver {
 }
 
 /// Save → load → restore through a brand-new driver instance (the in-process
-/// stand-in for a restarted process): the whole `MockState` — topics,
-/// messages, committed offsets — must come back identical.
+/// stand-in for a restarted process): every DATA field — topics, messages,
+/// committed offsets, round-robin cursor, version — must come back identical
+/// (T079: identity/connection fields are live, see the restore test below).
 #[tokio::test(start_paused = true)]
 async fn round_trip_through_fresh_driver_restores_everything() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -68,13 +69,29 @@ async fn round_trip_through_fresh_driver_restores_everything() {
     // Fresh driver instance loading from the same file path.
     let restored = MockKafkaDriver::new();
     let json = std::fs::read_to_string(&path).expect("snapshot file should exist after save");
+    // A fresh process connects first (live identity), THEN restores the data:
+    // `restore_json` never fakes the `connected` flag (T079), and the API
+    // checks below need a connected driver.
+    restored
+        .connect(&ClusterConfig::mock("persist-test"))
+        .await
+        .expect("connect should succeed");
     restored.restore_json(&json).await.expect("restore_json should succeed");
 
+    let restored_state = restored.state_handle().read().await.clone();
     assert_eq!(
-        restored.state_handle().read().await.clone(),
-        state,
-        "round-trip through disk must be lossless"
+        restored_state.topics, state.topics,
+        "round-trip through disk must be lossless for topics/messages"
     );
+    assert_eq!(
+        restored_state.groups, state.groups,
+        "round-trip through disk must be lossless for committed offsets"
+    );
+    assert_eq!(
+        restored_state.round_robin, state.round_robin,
+        "round-trip must not lose the round-robin cursor"
+    );
+    assert_eq!(restored_state.version, state.version, "round-trip must not lose the version");
     let topics = restored.list_topics().await.expect("list_topics should succeed");
     assert_eq!(
         topics.iter().filter(|t| t.name == "persist.log").count(),
@@ -86,6 +103,56 @@ async fn round_trip_through_fresh_driver_restores_everything() {
         groups.iter().any(|g| g.group_id == "etl"),
         "the persisted consumer group must exist after restore"
     );
+}
+
+/// T079 — restore scope: a snapshot restore swaps DATA only. The live driver
+/// keeps its current identity/connection (name, bootstrap servers, brokers,
+/// cluster id, connected flag), so restoring an old snapshot after a config
+/// edit must NOT resurrect the snapshot's stale brokers nor a phantom
+/// `connected` flag.
+#[tokio::test(start_paused = true)]
+async fn restore_after_config_change_keeps_live_identity() {
+    // Snapshot taken from driver A: config "persist-test" + its dataset.
+    let source = connected_with_log().await;
+    let json = source.snapshot_json().await.expect("snapshot_json should succeed");
+
+    // Live driver B: connected with a DIFFERENT name and bootstrap servers.
+    let live = MockKafkaDriver::new();
+    let mut cfg_b = ClusterConfig::mock("live-b");
+    cfg_b.bootstrap_servers = vec!["mock://10.1.2.3:9093".to_string()];
+    live.connect(&cfg_b).await.expect("connect B should succeed");
+
+    live.restore_json(&json).await.expect("restore_json should succeed");
+
+    {
+        let handle = live.state_handle();
+        let state = handle.read().await;
+        let cfg = state.config.as_ref().expect("the LIVE config must survive restore");
+        assert_eq!(cfg.name, "live-b", "restore must keep the LIVE cluster name");
+        assert_eq!(
+            cfg.bootstrap_servers,
+            vec!["mock://10.1.2.3:9093".to_string()],
+            "restore must keep the LIVE bootstrap servers"
+        );
+        assert_eq!(state.cluster_id, "mock-live-b", "restore must keep the LIVE cluster id");
+        assert_eq!(state.brokers.len(), 1, "restore must keep the LIVE broker list length");
+        assert_eq!(state.brokers[0].host, "10.1.2.3", "restore must keep the LIVE broker host");
+        assert_eq!(state.brokers[0].port, 9093, "restore must keep the LIVE broker port");
+        assert!(state.connected, "restore must keep the LIVE connected flag");
+        assert_eq!(state.controller_id, 1, "restore must keep the LIVE controller id");
+
+        // …while DATA still comes from the snapshot.
+        let topic = state.topics.get("persist.log").expect("snapshot topic must be restored");
+        assert_eq!(topic.total_messages(), 5, "snapshot messages must be restored");
+        assert_eq!(state.round_robin, 5, "snapshot round-robin cursor must be restored");
+        assert!(state.groups.contains_key("etl"), "snapshot group must be restored");
+    }
+
+    // Ghost-flag guard: after a disconnect, the snapshot's `connected: true`
+    // must not leak back in.
+    live.disconnect().await.expect("disconnect should succeed");
+    live.restore_json(&json).await.expect("second restore should succeed");
+    assert!(!live.is_connected().await, "restore must not resurrect a stale connected flag");
 }
 
 /// A first run has nothing to restore: a missing snapshot file is `Ok(None)`,

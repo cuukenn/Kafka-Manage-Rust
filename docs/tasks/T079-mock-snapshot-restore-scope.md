@@ -1,6 +1,6 @@
 # T079 · Mock 快照 `restore_json` 的恢复范围（整状态替换 vs 只恢复数据）
 
-**状态**: ⬜未开始 | **依赖**: T017 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T017 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 `restore_json`（`crates/kafka-driver/src/mock/driver.rs` ~:119-131）整体替换 `MockState`，
@@ -39,4 +39,6 @@ live config**（identity/connection 以当前内存状态为准），再按决�
 - `cargo clippy -p kafka-driver --all-targets -- -D warnings` 零告警
 
 ## 结果（完成后填写，≤5 行）
--
+- 2026-10-14：`restore_json` 改为按字段合并——data（topics/groups/round_robin/version）← 快照；identity/connection（connected/config/brokers/cluster_id/controller_id）+ `active_pumps` + `seed`/`rng_pinned` 保持 live（单次写锁内原子合并）。
+- 新测试 `restore_after_config_change_keeps_live_identity` 先 RED（旧 `persist-test` 身份被复活）后 GREEN；往返断言改为 4 个 data 字段等价（不丢 data 语义保留）；`state.rs` 补 data/live 字段分区注释。
+- 验收：`cargo test -p kafka-driver` 69/69、`cargo test -p kafka-app` 94/94、`cargo clippy --workspace --all-targets -- -D warnings` 零告警；实际 3 文件 / +105 −15。

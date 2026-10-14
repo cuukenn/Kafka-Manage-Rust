@@ -186,6 +186,18 @@ impl MockGroup {
 }
 
 /// Everything the mock driver knows. Cheap to clone for snapshots.
+///
+/// # Field partition (T079) — new fields must land on the right side
+///
+/// - **Persisted data** — `topics`, `groups`, `round_robin`, `version`:
+///   what a snapshot captures and `MockKafkaDriver::restore_json` restores.
+/// - **Live identity/connection** — `cluster_id`, `controller_id`, `brokers`,
+///   `connected`, `config`: owned by the running driver (set by `connect` /
+///   `disconnect`); a restore NEVER overwrites them, and they serialize into
+///   the snapshot file only because `MockPersistence` round-trips the whole
+///   struct.
+/// - **Live observability** — `active_pumps`: `#[serde(skip)]`, never
+///   compared, never restored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MockState {
