@@ -6,22 +6,29 @@
 //! path sanitising, asset reads) is separated from window creation so it can
 //! be unit-tested without a real window.
 //!
-//! This module must NOT depend on kafka-app/kafka-driver types and does not
-//! wire Router IPC, App or EventPump — that assembly is T038.
+//! This module must NOT depend on kafka-app/kafka-driver types. It owns the
+//! window-side half of the bridge (T038b): the `UserEvent`/`RpcHandler`/
+//! `BridgeGuard` hooks, the `WrySink` and the `POST app://localhost/rpc` route.
+//! What the hooks are wired *to* (App, Router, EventPump) lives in main-bin.
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use include_dir::{Dir, include_dir};
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoop};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::platform::run_return::EventLoopExtRunReturn;
-use tao::window::WindowBuilder;
+use tao::window::{Window, WindowBuilder};
 use wry::WebViewBuilder;
+use wry::http::Request;
 use wry::http::Response;
+use wry::http::Method;
 use wry::http::header::CONTENT_TYPE;
+
+use crate::pump::EventSink;
 
 /// Env var read by main-bin: when set, assets are served from this directory.
 pub const DEV_DIR_ENV: &str = "KAFKA_UI_DEV_DIR";
@@ -168,6 +175,87 @@ pub fn build_response(source: &PageSource, uri_path: &str) -> Response<Cow<'stat
     }
 }
 
+/// URI path the page POSTs its bridge commands to (`app://localhost/rpc`).
+const RPC_PATH: &str = "/rpc";
+
+/// A batch of bridge events posted from any thread onto the window's loop.
+/// The run loop turns each one into an `evaluate_script` call on the WebView.
+#[derive(Debug, Clone)]
+pub enum UserEvent {
+    /// One event batch, already serialized as a JSON array of `EventEnvelope`.
+    Batch(String),
+}
+
+/// Synchronous RPC entry point: raw request JSON in, response JSON out. wry
+/// calls the protocol closure synchronously, so the glue closure drives its
+/// async router with `Handle::block_on` before returning.
+pub type RpcHandler = Arc<dyn Fn(String) -> String + Send + Sync>;
+
+/// Teardown hook the run loop calls on `CloseRequested`, while the loop can
+/// still be pumped: stop the event pump, shut the App down, release whatever
+/// else the assembly owns. Called exactly once.
+pub trait BridgeGuard: Send {
+    fn on_close(self: Box<Self>);
+}
+
+/// Ready hook: called once the window and WebView exist. It gets the event-loop
+/// proxy it needs to build an [`WrySink`] and returns the close-time guard.
+pub type OnReady =
+    Box<dyn FnOnce(&Window, &EventLoopProxy<UserEvent>) -> Box<dyn BridgeGuard> + Send>;
+
+/// The JS one batch of bridge events is evaluated as. Pure, so the wire shape
+/// is unit-testable without a window: the batch JSON is embedded verbatim as a
+/// JS array literal, and a page without the hook simply short-circuits.
+pub fn event_script(batch_json: &str) -> String {
+    format!("window.__bridgeEvents && window.__bridgeEvents({batch_json})")
+}
+
+/// [`EventSink`] handing batches to the window thread through the loop proxy.
+/// `send_event` never blocks and never waits for JS; a closed loop (window
+/// already gone) is only a warning, since the pump is being stopped anyway.
+pub struct WrySink {
+    proxy: EventLoopProxy<UserEvent>,
+}
+
+impl WrySink {
+    pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
+        Self { proxy }
+    }
+}
+
+impl EventSink for WrySink {
+    fn push_batch(&self, batch_json: &str) {
+        if let Err(err) = self.proxy.send_event(UserEvent::Batch(batch_json.to_owned())) {
+            tracing::warn!("event batch dropped, window loop is closed: {err}");
+        }
+    }
+}
+
+/// One plain-text response body (the RPC answer, or a status line).
+fn text_response(status: u16, body: String) -> Response<Cow<'static, [u8]>> {
+    Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(Cow::Owned(body.into_bytes()))
+        .expect("plain text response is valid")
+}
+
+/// Route one `app://` request for a bridged window: `POST /rpc` hands its body
+/// to `rpc` and answers 200 `text/plain` with the router's response JSON;
+/// every other request is the usual static asset lookup (404 otherwise).
+/// Pure logic: no window required, directly unit-testable.
+fn bridge_response(
+    source: &PageSource,
+    rpc: &RpcHandler,
+    req: &Request<Vec<u8>>,
+) -> Response<Cow<'static, [u8]>> {
+    if req.method() == Method::POST && req.uri().path() == RPC_PATH {
+        let raw = String::from_utf8_lossy(req.body()).into_owned();
+        return text_response(200, rpc(raw));
+    }
+    build_response(source, req.uri().path())
+}
+
 /// Create the tao window (1280x800) + wry WebView on the **main thread** and
 /// block until the window is closed (`ControlFlow::Exit`), then return `Ok`.
 pub fn run_window(opts: WindowOptions) -> anyhow::Result<()> {
@@ -196,6 +284,68 @@ pub fn run_window(opts: WindowOptions) -> anyhow::Result<()> {
         } = event
         {
             *control_flow = ControlFlow::Exit;
+        }
+    });
+    if code == 0 {
+        Ok(())
+    } else {
+        anyhow::bail!("event loop exited with code {code}");
+    }
+}
+
+/// [`run_window`] plus the full bridge (T038b): the page talks to `rpc` over
+/// `POST app://localhost/rpc`, `on_ready` gets the loop proxy it needs to push
+/// events back (see [`WrySink`]) and hands back the close-time guard. Devtools
+/// are enabled so the manual checklist can drive the RPC from the console.
+///
+/// Blocks on the **main thread** until the window closes, then returns `Ok`.
+pub fn run_window_with(
+    opts: WindowOptions,
+    rpc: RpcHandler,
+    on_ready: OnReady,
+) -> anyhow::Result<()> {
+    let WindowOptions { title, page } = opts;
+    let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    let window = WindowBuilder::new()
+        .with_title(title)
+        .with_inner_size(LogicalSize::new(1280.0, 800.0))
+        .build(&event_loop)
+        .context("failed to create shell window")?;
+
+    let source = page;
+    let webview = WebViewBuilder::new()
+        .with_custom_protocol(APP_SCHEME.to_owned(), move |_id, req| {
+            bridge_response(&source, &rpc, &req)
+        })
+        .with_devtools(true)
+        .with_url(format!("{APP_SCHEME}://localhost/index.html"))
+        .build(&window)
+        .context("failed to create WebView (is the WebView2 runtime installed?)")?;
+
+    // The assembly spawns the event pump here, so the WebView really exists and
+    // the proxy it captures can never target a loop that was never built.
+    let proxy = event_loop.create_proxy();
+    let mut guard = Some(on_ready(&window, &proxy));
+
+    let code = event_loop.run_return(move |event, _target, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        match event {
+            Event::UserEvent(UserEvent::Batch(batch)) => {
+                // wry 0.57 renamed `evaluate` to `evaluate_script`; same call.
+                if let Err(err) = webview.evaluate_script(&event_script(&batch)) {
+                    tracing::warn!("failed to deliver an event batch: {err}");
+                }
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                if let Some(guard) = guard.take() {
+                    guard.on_close();
+                }
+                *control_flow = ControlFlow::Exit;
+            }
+            _ => {}
         }
     });
     if code == 0 {
@@ -292,5 +442,61 @@ mod tests {
                 .unwrap()
                 .contains("shell OK")
         );
+    }
+
+    #[test]
+    fn event_script_is_a_guarded_call_with_the_batch_embedded_verbatim() {
+        let batch = r#"[{"event":"message.received","payload":{"topic":"orders"},"ts":1}]"#;
+        let js = event_script(batch);
+        assert_eq!(
+            js,
+            format!("window.__bridgeEvents && window.__bridgeEvents({batch})")
+        );
+        // the parenthesised part must still be exactly the batch JSON
+        let inner = &js[js.find('(').expect("call") + 1..js.len() - 1];
+        let parsed: serde_json::Value = serde_json::from_str(inner).expect("batch json");
+        assert_eq!(parsed[0]["event"], "message.received");
+    }
+
+    #[test]
+    fn bridge_response_routes_post_rpc_and_keeps_assets() {
+        let rpc: RpcHandler = Arc::new(|raw| format!("echo:{raw}"));
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("app://localhost/rpc")
+            .body(br#"{"id":"1","cmd":"cluster.list"}"#.to_vec())
+            .expect("request");
+        let resp = bridge_response(&PageSource::Embedded, &rpc, &req);
+        assert_eq!(resp.status(), 200);
+        assert_eq!(resp.headers()[CONTENT_TYPE], "text/plain; charset=utf-8");
+        assert_eq!(
+            std::str::from_utf8(resp.body()).unwrap(),
+            r#"echo:{"id":"1","cmd":"cluster.list"}"#
+        );
+
+        // assets keep being served over GET
+        let req = Request::builder()
+            .uri("app://localhost/index.html")
+            .body(Vec::new())
+            .expect("request");
+        let resp = bridge_response(&PageSource::Embedded, &rpc, &req);
+        assert_eq!(resp.status(), 200);
+        assert!(std::str::from_utf8(resp.body()).unwrap().contains("shell OK"));
+
+        // everything else is 404: a missing asset, and /rpc without POST
+        for (method, uri) in [
+            (Method::GET, "app://localhost/missing.js"),
+            (Method::GET, "app://localhost/rpc"),
+            (Method::POST, "app://localhost/../secret"),
+        ] {
+            let req = Request::builder()
+                .method(method.clone())
+                .uri(uri)
+                .body(Vec::new())
+                .expect("request");
+            let resp = bridge_response(&PageSource::Embedded, &rpc, &req);
+            assert_eq!(resp.status(), 404, "{method} {uri}");
+        }
     }
 }

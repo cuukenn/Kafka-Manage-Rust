@@ -61,3 +61,9 @@
 `cargo test -p main-bin`；`cargo test --workspace`；`cargo clippy -p main-bin -p webview-bridge --all-targets -- -D warnings`；`cargo build -p main-bin` + 冒烟（起 6s 存活后 kill）。rustfmt 仅改动文件。
 
 预算（R8 口径）：3 代码文件（main.rs/glue.rs/shell.rs）；Cargo.toml、index.html、测试豁免。
+
+## 结果（2026-10-14，实现完成）
+
+- 装配完成：main.rs + glue.rs（日志/数据目录/App/Router 六表/tokio 多线程 runtime/事件泵/ShutdownGuard）+ shell.rs 扩展（UserEvent/RpcHandler/BridgeGuard/WrySink/run_window_with/event_script/POST /rpc 路由/devtools）+ index.html `__bridgeEvents` 钩子。
+- 自动验证全绿：`cargo test -p main-bin` 6 测试；workspace 全绿（kafka-app 100 / kafka-driver 72 / webview-bridge 54=52+2 新增 shell 单测）；clippy `-D warnings` 零告警；build + 冒烟（进程存活 7s 后 kill，stderr 干净，store/router/pump INFO 正常）。
+- 整体 🔶待手动验证：用户按上方手动清单验证窗口打开、devtools RPC 探测、produce.send 后 `__bridgeEvents` 批量事件。

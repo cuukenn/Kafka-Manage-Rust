@@ -32,5 +32,17 @@
       <p>tao + wry shell is up — the Vue frontend mounts below (phase 4).</p>
     </main>
     <div id="app"></div>
+    <script>
+      // Bridge event hook (T038b). Rust evaluates
+      // `window.__bridgeEvents && window.__bridgeEvents([...])` per batch, so
+      // defining this is what makes pushed events visible. The Vue app may
+      // replace it on mount; keep the log so the manual checklist can inspect
+      // batches from devtools.
+      window.__bridgeLog = [];
+      window.__bridgeEvents = function (batch) {
+        window.__bridgeLog.push(batch);
+        console.log("[bridge]", batch);
+      };
+    </script>
   </body>
 </html>

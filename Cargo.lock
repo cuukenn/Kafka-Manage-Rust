@@ -1368,10 +1368,12 @@ name = "main-bin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dirs",
  "include_dir",
  "kafka-app",
  "kafka-core",
  "kafka-driver",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
