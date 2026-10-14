@@ -1,6 +1,6 @@
 # T035 · Router：`consume.*`
 
-**状态**: ⬜未开始 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
+**状态**: ✅完成 | **依赖**: T033 | **改动上限**: 3 文件 / 250 行
 
 ## 目标
 
@@ -64,4 +64,7 @@
 - `cargo check --workspace` 通过
 
 ## 结果（完成后填写，≤5 行）
--
+- 新建 `handlers_consume.rs`（`register_consume`，6 命令全部 `cmd::` 常量）+ `tests/router_consume.rs`（6 个 e2e）；`lib.rs` 仅加 mod。
+- `SubscribePayload{clusterId, #[serde(flatten)] SubscribeReq}`：缺省 `subscriptionId` 由 `SubscribeReq::default()` 生成 UUID（R6），桥接不造 id。
+- 偏差：`OffsetStart` 是 adjacently-tagged serde，wire 实为 `{"type":"earliest"}` 而非卡面的 `start:"earliest"`（不改 kafka-core，测试按实际形状）。
+- 验证：`cargo test -p webview-bridge` 29 通过（23 旧 + 6 新）；clippy `--all-targets -D warnings` 零告警；`cargo check --workspace` 通过。

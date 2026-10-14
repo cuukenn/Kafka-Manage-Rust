@@ -141,7 +141,7 @@
 | T032 | Router 内核：envelope 解析 + 命令表 + 假 App 单测 | T030 | `cargo test -p webview-bridge` | ✅ |
 | T033 | Router：`cluster.*` + `config.*` | T032 | `--test router_cluster` | ✅ |
 | T034 | Router：`topic.*` + `produce.*` | T032 | `--test router_topic_produce` | ✅ |
-| T035 | Router：`consume.*` | T032 | `--test router_consume` | ⏸ |
+| T035 | Router：`consume.*` | T032 | `--test router_consume` | ✅ |
 | T036 | Router：`group.*`（`mock.*` 拆分为 T084/T085，见 ledger 裁定） | T032 | `--test router_group` | ⬜ |
 | T084 | Mock 控制接缝：`KafkaDriver::as_any`（默认 None + Mock 覆写） | T032 | `cargo test -p kafka-driver`（含 conformance.rs） | ✅ |
 | T085 | Router：`mock.*`（经 T084 downcast） | T084 | `--test router_mock` | ⬜ |
