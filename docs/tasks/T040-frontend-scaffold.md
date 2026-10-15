@@ -1,6 +1,6 @@
 # T040 — 前端资源骨架：Vite+Vue3+TS+Tailwind 脚手架 + rpc/events 桥模块
 
-状态: ⏸　依赖: T039 ✅　验证: `npm run build` + `cargo run -p main-bin` 显示 UI 无 404（用户手动）　类型: 前端脚手架
+状态: ✅（用户实测 2026-10-15：窗口显示 Vue 应用、无 404、Tailwind 样式正常）　依赖: T039 ✅　验证: `npm run build` + `cargo run -p main-bin` 显示 UI 无 404（用户手动）　类型: 前端脚手架
 
 ## 目标
 
