@@ -4,8 +4,9 @@
 // topic placeholder; groups/logs placeholders remain (T048/T049).
 import { computed } from 'vue';
 import ClustersView from '../views/ClustersView.vue';
+import TopicsView from '../views/TopicsView.vue';
 import TreeView from '../components/TreeView.vue';
-import { clearTopicSelection, ui, setView, toggleTheme, type ViewName } from '../store/ui';
+import { ui, setView, toggleTheme, type ViewName } from '../store/ui';
 
 const NAV: { view: ViewName; label: string }[] = [
   { view: 'clusters', label: '集群' },
@@ -76,13 +77,8 @@ const badgeText = computed(() => {
 
       <!-- Main view area -->
       <main class="min-w-0 flex-1 overflow-auto p-6">
-        <section v-if="ui.currentView === 'clusters' && ui.selectedTopic">
-          <div class="mb-2 flex items-center gap-3">
-            <h2 class="text-lg font-semibold">{{ ui.selectedTopic.clusterName }} / {{ ui.selectedTopic.topic }}</h2>
-            <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" @click="clearTopicSelection">返回集群列表</button>
-          </div>
-          <p class="text-sm text-slate-500 dark:text-slate-400">Topic 详情表格将在 T044 落地；本卡仅记录选中并显示占位标题。</p>
-        </section>
+        <!-- T044a: tree topic selection lands on the topic table (row highlighted) -->
+        <TopicsView v-if="ui.currentView === 'clusters' && ui.selectedTopic" />
         <ClustersView v-else-if="ui.currentView === 'clusters'" />
         <section v-else-if="ui.currentView === 'groups'">
           <h2 class="mb-2 text-lg font-semibold">消费组</h2>
