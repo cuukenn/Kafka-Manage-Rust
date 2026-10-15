@@ -1,6 +1,6 @@
 # T038b — main.rs 启动装配：日志、数据目录、App、Router IPC、事件泵、窗口
 
-状态: ⏸　依赖: T031, T033–T037, T085, T038a　验证: 自动部分见下；整体 🔶待手动验证（用户）　类型: 装配+手动
+状态: ✅（2026-10-15 用户经 T039 清单实测通过）　依赖: T031, T033–T037, T085, T038a　验证: 自动部分见下；手动清单已由用户全过　类型: 装配+手动
 
 拆分裁定 R10: 本卡为 T038 的装配半边；kafka-app 接线（护栏/快照）已由 T038a 完成。
 
@@ -66,4 +66,4 @@
 
 - 装配完成：main.rs + glue.rs（日志/数据目录/App/Router 六表/tokio 多线程 runtime/事件泵/ShutdownGuard）+ shell.rs 扩展（UserEvent/RpcHandler/BridgeGuard/WrySink/run_window_with/event_script/POST /rpc 路由/devtools）+ index.html `__bridgeEvents` 钩子。
 - 自动验证全绿：`cargo test -p main-bin` 6 测试；workspace 全绿（kafka-app 100 / kafka-driver 72 / webview-bridge 54=52+2 新增 shell 单测）；clippy `-D warnings` 零告警；build + 冒烟（进程存活 7s 后 kill，stderr 干净，store/router/pump INFO 正常）。
-- 整体 🔶待手动验证：用户按上方手动清单验证窗口打开、devtools RPC 探测、produce.send 后 `__bridgeEvents` 批量事件。
+- 整体 ✅（2026-10-15）：用户按手动清单验证通过（窗口、相对 /rpc 探测、produce.send 后 `[bridge]` 批量事件、快照恢复、干净退出）。
