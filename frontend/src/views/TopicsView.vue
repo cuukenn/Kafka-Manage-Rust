@@ -7,6 +7,7 @@
 // name, numPartitions, replicationFactor}; topic.delete {clusterId, names[]}
 // -> [{name, error}]; topic.changed {clusterId, topic, change} -> coalesced re-pull.
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import TopicConfigModal from '../components/TopicConfigModal.vue';
 import TopicModal from '../components/TopicModal.vue';
 import { on } from '../bridge/events';
 import { rpc } from '../bridge/rpc';
@@ -27,6 +28,8 @@ const rows = ref<TopicRow[]>([]);
 const loading = ref(false);
 const tableError = ref<string | null>(null);
 const showCreate = ref(false);
+// T044b: topic name whose config modal is open, else null.
+const configTopic = ref<string | null>(null);
 
 // T042/T043 coalesced re-pull: arrivals during an in-flight pull schedule
 // exactly one follow-up, so topic.changed bursts cannot race overlapping pulls.
@@ -138,7 +141,14 @@ onUnmounted(() => off?.());
           <td class="px-2 py-1.5">{{ row.internal ? '是' : '—' }}</td>
           <td class="px-2 py-1.5">{{ row.partitionCount }}</td>
           <td class="px-2 py-1.5">{{ row.replicationFactor }}</td>
-          <td class="px-2 py-1.5 text-right">
+          <td class="px-2 py-1.5 text-right space-x-1.5">
+            <button
+              type="button"
+              class="rounded border border-slate-300 px-2 py-0.5 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              @click="configTopic = row.name"
+            >
+              配置
+            </button>
             <button
               type="button"
               class="rounded border border-rose-300 px-2 py-0.5 text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/40"
@@ -159,6 +169,14 @@ onUnmounted(() => off?.());
       :cluster-id="targetCluster.id"
       @close="showCreate = false"
       @created="showCreate = false; refresh()"
+    />
+
+    <TopicConfigModal
+      v-if="configTopic && targetCluster"
+      :cluster-id="targetCluster.id"
+      :topic="configTopic"
+      @close="configTopic = null"
+      @saved="configTopic = null; refresh()"
     />
   </section>
 </template>
