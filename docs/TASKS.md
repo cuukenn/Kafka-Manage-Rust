@@ -160,7 +160,7 @@
 | T042b | 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T042a | npm build+cargo build+冒烟 | 🔶同上（edit 回写已修 398d38f） |
 | T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | npm build+cargo build+冒烟 | 🔶审查过+修复过（b545a72+df55ee5），窗口项批量 |
 | T044a | Topic 表格 + 创建/删除（R22 预拆） | T043 | npm build+cargo build+冒烟 | 🔶审查过（c505656），window.confirm 待窗口实测 |
-| T044b | Topic 配置编辑（wire 不支持则 BLOCKED 登后端缺口卡） | T044a | npm build+cargo build+冒烟 | ⏸ |
+| T044b | Topic 配置编辑（wire 不支持则 BLOCKED 登后端缺口卡） | T044a | npm build+cargo build+冒烟 | 🔶审查过（d24323f，0C/0I），窗口项批量 |
 | T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | 手动 | ⏸ |
 | T046 | 消费面板（offset 起点、实时表格、暂停/恢复/停止） | T044 | 手动 | ⏸ |
 | T047 | 消息详情抽屉（raw/JSON/base64）+ 搜索过滤 | T046 | 手动 | ⏸ |
