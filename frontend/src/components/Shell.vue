@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // T041 app shell: left nav + top bar (status badge, theme toggle) + main view.
-// Views for T042/T048/T049 are placeholders until those tasks land.
+// T042 wired the clusters view in; groups/logs placeholders remain (T048/T049).
 import { computed } from 'vue';
+import ClustersView from '../views/ClustersView.vue';
 import { ui, setView, toggleTheme, type ViewName } from '../store/ui';
 
 const NAV: { view: ViewName; label: string }[] = [
@@ -68,12 +69,7 @@ const badgeText = computed(() => {
 
       <!-- Main view area -->
       <main class="min-w-0 flex-1 overflow-auto p-6">
-        <section v-if="ui.currentView === 'clusters'">
-          <h2 class="mb-2 text-lg font-semibold">集群</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            集群管理页将在 T042 落地；当前外壳仅占位。
-          </p>
-        </section>
+        <ClustersView v-if="ui.currentView === 'clusters'" />
         <section v-else-if="ui.currentView === 'groups'">
           <h2 class="mb-2 text-lg font-semibold">消费组</h2>
           <p class="text-sm text-slate-500 dark:text-slate-400">
