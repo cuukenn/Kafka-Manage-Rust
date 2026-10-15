@@ -2,47 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>rs-kafka-ui-client</title>
-    <style>
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-      }
-      body {
-        display: grid;
-        place-items: center;
-        background: #0f172a;
-        color: #e2e8f0;
-        font-family: system-ui, "Segoe UI", sans-serif;
-      }
-      main {
-        text-align: center;
-      }
-      .ok {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #34d399;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <p class="ok">shell OK</p>
-      <p>tao + wry shell is up — the Vue frontend mounts below (phase 4).</p>
-    </main>
-    <div id="app"></div>
     <script>
-      // Bridge event hook (T038b). Rust evaluates
-      // `window.__bridgeEvents && window.__bridgeEvents([...])` per batch, so
-      // defining this is what makes pushed events visible. The Vue app may
-      // replace it on mount; keep the log so the manual checklist can inspect
-      // batches from devtools.
-      window.__bridgeLog = [];
+      // Bridge event hook (T040). Rust evaluates
+      // `window.__bridgeEvents && window.__bridgeEvents([...])` per batch, and a
+      // batch can arrive BEFORE the app bundle initialises. So this inline hook
+      // (classic script, runs during parse) only queues batches;
+      // src/bridge/events.ts drains window.__bridgeQueue on load and then
+      // installs its own dispatching handler for later batches.
+      window.__bridgeQueue = [];
       window.__bridgeEvents = function (batch) {
-        window.__bridgeLog.push(batch);
-        console.log("[bridge]", batch);
+        window.__bridgeQueue.push(batch);
       };
     </script>
+    <script defer src="./assets/index-BNIm_H75.js"></script>
+  </head>
+  <body class="bg-slate-900 text-slate-100">
+    <div id="app"></div>
   </body>
 </html>

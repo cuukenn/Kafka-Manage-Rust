@@ -30,6 +30,8 @@
 
 ## 偏差与风险
 
-- Tailwind 大版本（v3 config 式 vs v4 CSS 式）以当前 npm 实况为准；允许一次窄域文档查询。
+- Tailwind 大版本（v3 config 式 vs v4 CSS 式）以当前 npm 实况为准；允许一次窄域文档查询。→ 实况：Tailwind v4.3（CSS 式 `@import "tailwindcss"` + `@tailwindcss/vite` 插件），未做文档查询。
 - dist 入库带来 churn（R17 已接受）。
 - T090 被本卡吸收（R18）：验收后 T090 行记 ✅(absorbed)。
+- **模块脚本决策**：WebView2 对自定义协议上的 `<script type="module">` 可能因 CORS/头限制而拒绝执行，故构建产物为**非模块 IIFE**：`rollupOptions.output.format:'iife'` + `inlineDynamicImports`，插件 `t040:no-module-output` 把 Vite 注入的 `type="module" crossorigin` 改写为 `defer`；`modulePreload:false`、`base:'./'` 保证资源全部同源相对可达。CSS 被 Vite 内联进 JS（无独立 CSS 请求）。用户手动验收时若 devtools 无 404 且应用渲染，则该决策成立。
+- 回归触发第 6 条：`shell.rs` 测试中 3 处 `"shell OK"` 断言改为 `"window.__bridgeEvents"`（新 dist 的稳定标记；`<title>` 与 `<div id="app"></div>` 断言原样保留）。仅测试代码，豁免预算。

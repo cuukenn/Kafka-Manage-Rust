@@ -1,0 +1,4 @@
+# dist/ is intentionally NOT ignored: the build output is committed (R17).
+node_modules/
+*.log
+.vite/

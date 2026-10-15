@@ -408,7 +408,7 @@ mod tests {
         let bytes = read_embedded("index.html").expect("embedded index.html");
         let html = std::str::from_utf8(bytes).expect("utf-8 html");
         assert!(html.contains("<title>rs-kafka-ui-client</title>"));
-        assert!(html.contains("shell OK"));
+        assert!(html.contains("window.__bridgeEvents"));
         assert!(html.contains("<div id=\"app\"></div>"));
     }
 
@@ -441,7 +441,7 @@ mod tests {
         assert!(
             std::str::from_utf8(resp.body())
                 .unwrap()
-                .contains("shell OK")
+                .contains("window.__bridgeEvents")
         );
     }
 
@@ -483,7 +483,7 @@ mod tests {
             .expect("request");
         let resp = bridge_response(&PageSource::Embedded, &rpc, &req);
         assert_eq!(resp.status(), 200);
-        assert!(std::str::from_utf8(resp.body()).unwrap().contains("shell OK"));
+        assert!(std::str::from_utf8(resp.body()).unwrap().contains("window.__bridgeEvents"));
 
         // everything else is 404: a missing asset, and /rpc without POST
         for (method, uri) in [

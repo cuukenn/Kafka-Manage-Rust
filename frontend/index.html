@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rs-kafka-ui-client</title>
+    <script>
+      // Bridge event hook (T040). Rust evaluates
+      // `window.__bridgeEvents && window.__bridgeEvents([...])` per batch, and a
+      // batch can arrive BEFORE the app bundle initialises. So this inline hook
+      // (classic script, runs during parse) only queues batches;
+      // src/bridge/events.ts drains window.__bridgeQueue on load and then
+      // installs its own dispatching handler for later batches.
+      window.__bridgeQueue = [];
+      window.__bridgeEvents = function (batch) {
+        window.__bridgeQueue.push(batch);
+      };
+    </script>
+  </head>
+  <body class="bg-slate-900 text-slate-100">
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
