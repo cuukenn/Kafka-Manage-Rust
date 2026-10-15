@@ -22,6 +22,7 @@
 8. **故障注入**：`mock.faults` 注入后一次调用得到 `ok:false` + 对应 kind；`mock.reset` 后恢复。
 9. **快照持久（T038a）**：基于第 5 步创建的 topic：关窗 → 再开 → 连接同一集群，不重新 `topic.create`，`topic.list` 仍有该 topic（SQLite slot 恢复）。
 10. **干净退出**：关窗后进程退出无挂起；stderr 日志见 pump/App 关闭记录；再启动正常。
+    （✅ 控制器代验 2026-10-15：WM_CLOSE→`bridge shut down cleanly`→10s 内自然退出未强杀；用户可复核）
 
 ## 记录
 
