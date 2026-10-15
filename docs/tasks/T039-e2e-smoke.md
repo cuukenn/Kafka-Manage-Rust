@@ -11,9 +11,9 @@
 ## 手动清单（在窗口 devtools Console 逐条执行）
 
 1. **窗口**：`cargo run -p main-bin` → 窗口打开，显示占位页 `shell OK`，标题 `rs-kafka-ui-client`；F12/右键可开 devtools。（覆盖 T031 🔶 项）
-2. **RPC 通路**：
-   `fetch('app://localhost/rpc',{method:'POST',body:JSON.stringify({id:'1',cmd:'cluster.list',payload:{}})}).then(r=>r.text()).then(console.log)`
-   → 返回 `{"id":"1","ok":true,...}`。
+2. **RPC 通路**（注意：Windows 上 wry 把 `app://` 页面重映射为同源 `http://app.localhost`，`fetch('app://…')` 会被 Chromium 拒绝——必须用**相对路径**）：
+   `await fetch('/rpc',{method:'POST',body:JSON.stringify({id:'1',cmd:'cluster.list',payload:{}})}).then(r=>r.text())`
+   → 返回 `{"id":"1","ok":true,...}`。（✅ 用户实测 2026-10-15）
 3. **坏输入**：body 传 `'{bad'` → `ok:false` 且 `error.kind` 为 parse 类。
 4. **连接 Mock 集群**：`cluster.save`（mock 配置）→ `cluster.connect` → `ok:true`；`cluster.list` 显示已连接。
 5. **建 topic+列 topic**：`topic.create`（已连接集群 + topic 名）→ `ok:true`；`topic.list` 出现刚创建的 topic。注：`mock.seed` 只固定 RNG 种子（故障注入序列可复现），**不**播种预置 topic；全新 mock 集群连接后 `topic.list` 为空（fixture 播种仅测试内可用）。

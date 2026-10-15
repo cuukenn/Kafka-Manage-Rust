@@ -28,7 +28,7 @@
 - `pub type RpcHandler = Arc<dyn Fn(String) -> String + Send + Sync>`（同步；glue 内 `handle.block_on`）。
 - `pub trait BridgeGuard: Send { fn on_close(self: Box<Self>); }`（CloseRequested 时调用：关泵+App::shutdown）。
 - `pub fn run_window_with(opts: WindowOptions, rpc: RpcHandler, on_ready: Box<dyn FnOnce(&Window, &EventLoopProxy<UserEvent>) -> Box<dyn BridgeGuard> + Send>) -> anyhow::Result<()>`；`run_window` 保持原签名（= 无桥版本，T031 测试不破）。
-- 协议路由：`app://localhost/index.html` 等 GET → 现有资源服务；`POST app://localhost/rpc` → body 进 `rpc` → 200 `text/plain`（响应体=router 响应 JSON）；其余 → 404。
+- 协议路由：`app://localhost/index.html` 等 GET → 现有资源服务；`POST app://localhost/rpc` → body 进 `rpc` → 200 `application/json`（响应体=router 响应 JSON）；其余 → 404。注：Windows 上 wry 把页面重映射为同源 `http://app.localhost`（wry 官方 workaround），JS 侧一律用**相对路径**（`/rpc`）；`fetch('app://…')` 会被 Chromium 以非标准 scheme 拒绝。
 - `pub fn event_script(batch_json: &str) -> String`（纯函数）：`window.__bridgeEvents && window.__bridgeEvents(<batch_json>)`。
 - devtools 开启（`with_devtools`）。
 
@@ -53,7 +53,7 @@
 ## 手动验证清单（用户，🔶）
 
 `cargo run -p main-bin` → 窗口打开显示占位页 → F12 devtools console：
-`fetch('app://localhost/rpc',{method:'POST',body:JSON.stringify({id:'1',cmd:'cluster.list',payload:{}})}).then(r=>r.text()).then(console.log)` → `{"id":"1","ok":true,...}`；
+`fetch('/rpc',{method:'POST',body:JSON.stringify({id:'1',cmd:'cluster.list',payload:{}})}).then(r=>r.text())` → `{"id":"1","ok":true,...}`（JS 侧用相对路径，见上方注记）；
 再 `cluster.save`(mock 配置)+`cluster.connect`+`topic.create`+`topic.list` 见刚创建的 topic（注：`mock.seed` 仅固定 RNG 种子、不播种预置 topic，全新 mock 集群连接后为空）；`produce.send` 后 console 出现 `__bridgeEvents` 批量事件。
 
 ## 验证命令
