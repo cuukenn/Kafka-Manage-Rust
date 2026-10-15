@@ -13,7 +13,7 @@ import { reactive } from 'vue';
 import { rpc } from '../bridge/rpc';
 import { on } from '../bridge/events';
 
-export type ViewName = 'clusters' | 'groups' | 'logs';
+export type ViewName = 'clusters' | 'produce' | 'groups' | 'logs';
 export type Theme = 'light' | 'dark';
 
 /** T043: topic node picked in the sidebar tree; T044+ topic views consume it. */
