@@ -1,29 +1,26 @@
-# T042 — 集群页 + 集群编辑弹窗（Mock 开关、SASL/SSL 字段）
+# T042a — 集群页：列表 + 连接/断开/删除 + 导航接线
 
-状态: ⏸　依赖: T041　验证: `npm run build` + cargo 全绿 + 冒烟；窗口手动项并入用户批量清单　类型: 前端
+状态: ⏸　依赖: T041　验证: `npm run build` + `cargo build -p main-bin` + 冒烟（前端卡不跑 cargo test，见 R23）　类型: 前端
+拆分说明: 原 T042 超上下文预算拆两卡（R22，先例 R10）。编辑弹窗在 T042b。
 
-## 目标
+## 范围（只做这些）
 
-把外壳的视图区填上第一个真实页：**集群管理**。
+1. **集群列表视图**：进入集群视图时 `cluster.list` 拉取，表格列：名称 / bootstrap / Mock 标记 / 连接状态(state 徽标，复用 T041 样式) / driver / 操作。
+2. **行操作**：连接 `cluster.connect` / 断开 `cluster.disconnect` / 删除 `cluster.delete`（简单 confirm）。操作结果刷新行；错误行内错误条（toast 留给 T049）。
+3. **事件驱动刷新**：`connection.state` 事件触发列表重拉（合并去抖，顺手修 T041 refresh-race minor）。
+4. **导航接线**：currentView 增加 'clusters'（优先 store/ui.ts 数据驱动单源）。视图区暂以占位按钮「新建/编辑（T042b）」收尾。
 
-1. **集群列表**：进入集群视图时 `cluster.list` 拉取（返回 `ClusterView` 行：camelCase 展开的 config 字段 + `state` + `driver`，T041 已核实）。表格列：名称 / bootstrap / Mock 标记 / 连接状态(state 徽标) / driver / 操作。
-2. **操作**：每行 连接 / 断开 / 删除 / 编辑；顶部「新建集群」。连接状态变化经 `connection.state` 事件刷新（复用 T041 的订阅路径）。
-3. **编辑弹窗（新建/编辑共用）**：name、bootstrapServers（逗号分隔输入）、**Mock 开关**、clientId、securityProtocol 选择；SASL 区（mechanism/username/password/saslProtocol）、SSL 区（caPem/caPath/certPem/keyPem/verifyCertificate/verifyHostname）。保存走 `cluster.save`（payload = ClusterConfig 本体，camelCase，见 T039 卡探针）。
-4. 删除前确认（简单 confirm 即可）；错误经 RpcError 显示（toast 缺位前用行内错误条，T049 统一）。
+## 线事实（窄 grep，limit≤15，禁读整 Rust 文件）
 
-## 线事实（实现前必须窄 grep 核实，不得照抄本卡）
-
-- `cluster.*` 全部命令名与 payload 形状：grep `crates/kafka-core/src/protocol.rs` 的 `CLUSTER_` 常量 + `crates/webview-bridge/tests/router_cluster.rs` 用例。
-- `ClusterConfig` 完整字段与 serde 形状：`crates/kafka-core/src/cluster.rs`（camelCase + default；SASL/SSL 是 Option 嵌套）。
-- 事件名以 protocol.rs 为准（T041 已核实 `connection.state`）。
+- `cluster.*` 命令名：grep protocol.rs `CLUSTER_`；payload：grep router_cluster.rs `json!` 或按 key 逐个 grep。
+- ClusterView 行形状：grep kafka-app services/clusters.rs `ClusterView` -A 12。
+- 事件名 connection.state 已由 T041 核实，复用 ui.ts 订阅路径。
 
 ## 边界与预算
 
-- src 新文件 ≤3（建议 `views/ClustersView.vue`、`components/ClusterModal.vue`、`store/clusters.ts`），新增 ≤250 行；CSS/配置/dist 豁免；无新依赖；**不改 Rust**；dist 重建并提交。
-- 导航入口：T041 的 ui store currentView 增加 'clusters' 路由项（改 Shell.vue/App.vue 计入 3 文件预算——若超，允许把导航项定义挪进 store/ui.ts 单源）。
-- 弹窗表单直接映射 ClusterConfig；未填字段留默认（serde default 兜底），不做过度校验。
+src 文件 ≤3（建议 views/ClustersView.vue、store/clusters.ts、ui.ts 接线），≤250 行；CSS/配置/dist 豁免；无新依赖；**不改 Rust**；dist 重建提交（git add -f）。
 
-## 验证
+## 验证（R23：前端卡精简）
 
-1. `npm run build`；2. `cargo build -p main-bin`；3. `cargo test --workspace` 239 全绿（不改 Rust）；4. clippy 零；5. 冒烟 8s + CloseMainWindow 干净退出。
-窗口手动项（用户批量清单）：新建 mock 集群→连接→徽标变 connected→断开→删除。
+1. `npm run build`；2. `cargo build -p main-bin`（嵌入新 dist）；3. 冒烟 8s + CloseMainWindow 干净退出。
+（无 Rust 改动则不跑 cargo test/clippy——审查者以 diff 确认 Rust 零改动。）
