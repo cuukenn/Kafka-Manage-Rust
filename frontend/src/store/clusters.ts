@@ -17,6 +17,10 @@ export interface ClusterRow {
   securityProtocol: string;
   auth: { mechanism: string; username: string; password: string; saslProtocol?: string | null } | null;
   ssl: { caPem?: string | null; caPath?: string | null; certPem?: string | null; keyPem?: string | null; verifyCertificate: boolean; verifyHostname: boolean } | null;
+  timeouts: Record<string, number>;
+  extra: Record<string, string>;
+  createdAt: number;
+  updatedAt: number;
   state: string;
   driver: string | null;
 }

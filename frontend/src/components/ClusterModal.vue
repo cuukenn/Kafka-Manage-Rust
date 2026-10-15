@@ -37,7 +37,12 @@ const inp = 'mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 te
 
 async function submit(): Promise<void> {
   const cfg: Record<string, unknown> = { name: f.name, bootstrapServers: f.bootstrap.split(',').map((s) => s.trim()).filter(Boolean), mock: f.mock, clientId: f.clientId, securityProtocol: f.protocol };
-  if (props.initial) cfg.id = props.initial.id;
+  if (props.initial) {
+    cfg.id = props.initial.id;
+    // T042 review Important #1: carry unmodeled ClusterConfig fields through the edit round-trip.
+    const { timeouts, extra, createdAt, updatedAt } = props.initial;
+    Object.assign(cfg, { timeouts, extra, createdAt, updatedAt });
+  }
   if (usesSasl.value) cfg.auth = { mechanism: f.mech, username: f.user, password: f.pass, saslProtocol: f.saslProto || null };
   if (usesTls.value) cfg.ssl = { caPem: f.caPem || null, caPath: f.caPath || null, certPem: f.certPem || null, keyPem: f.keyPem || null, verifyCertificate: f.verifyCert, verifyHostname: f.verifyHost };
   if (await saveCluster(cfg)) emit('close');
