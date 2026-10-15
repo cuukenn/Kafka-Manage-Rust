@@ -16,6 +16,9 @@ import { on } from '../bridge/events';
 export type ViewName = 'clusters' | 'groups' | 'logs';
 export type Theme = 'light' | 'dark';
 
+/** T043: topic node picked in the sidebar tree; T044+ topic views consume it. */
+export interface TopicSelection { clusterId: string; clusterName: string; topic: string }
+
 /** One cluster.list row, only the fields the shell renders. */
 interface ClusterRow {
   id?: string;
@@ -32,10 +35,20 @@ export const ui = reactive({
   /** null = not connected; otherwise the connected cluster's display name. */
   connectedCluster: null as string | null,
   badgeLoading: true,
+  /** null = no topic node selected in the T043 tree. */
+  selectedTopic: null as TopicSelection | null,
 });
+
+export function selectTopic(sel: TopicSelection): void {
+  ui.selectedTopic = sel;
+  ui.currentView = 'clusters';
+}
+export function clearTopicSelection(): void { ui.selectedTopic = null; }
 
 export function setView(view: ViewName): void {
   ui.currentView = view;
+  // Nav clicks leave the T043 topic placeholder; the tree re-picks on demand.
+  ui.selectedTopic = null;
 }
 
 function applyTheme(): void {
