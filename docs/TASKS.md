@@ -156,8 +156,8 @@
 |---|---|---|---|---|
 | T040 | 资源骨架 + 本地 vendored Vue/Tailwind + `rpc.js`/`events.js` | T039 | 手动：页面加载无 404 | ✅（ae3824f，用户实测 2026-10-15：Vue 应用渲染/无404/样式正常） |
 | T041 | 应用外壳：布局 / 导航 / 主题切换 / 状态栏 | T040 | 手动 | 🔶待手动验证（代码审查已过 c71c2d0；窗口项并入批量清单） |
-| T042a | 集群页：列表+连接/断开/删除+导航接线（R22 拆分） | T041 | npm build+cargo build+冒烟 | ⏸ |
-| T042b | 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T042a | npm build+cargo build+冒烟 | ⏸ |
+| T042a | 集群页：列表+连接/断开/删除+导航接线（R22 拆分） | T041 | npm build+cargo build+冒烟 | 🔶审查过+修复过（70fd711+398d38f），窗口项批量 |
+| T042b | 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T042a | npm build+cargo build+冒烟 | 🔶同上（edit 回写已修 398d38f） |
 | T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | 手动 | ⏸ |
 | T044 | Topic 表格 + 创建/删除弹窗 + 配置编辑 | T043 | 手动 | ⏸ |
 | T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | 手动 | ⏸ |
