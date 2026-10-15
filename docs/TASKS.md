@@ -154,7 +154,7 @@
 
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
-| T040 | 资源骨架 + 本地 vendored Vue/Tailwind + `rpc.js`/`events.js` | T039 | 手动：页面加载无 404 | ⏸ |
+| T040 | 资源骨架 + 本地 vendored Vue/Tailwind + `rpc.js`/`events.js` | T039 | 手动：页面加载无 404 | 🔶待手动验证（代码审查已过 ae3824f） |
 | T041 | 应用外壳：布局 / 导航 / 主题切换 / 状态栏 | T040 | 手动 | ⏸ |
 | T042 | 集群页 + 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T041 | 手动 | ⏸ |
 | T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | 手动 | ⏸ |
@@ -201,7 +201,7 @@
 
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
-| T090 | 前端资源 `include_dir` 嵌入 + 资源路由 | T040 | `cargo run -p main-bin` 显示 UI | ⏸ |
+| T090 | 前端资源 `include_dir` 嵌入 + 资源路由 | T040 | `cargo run -p main-bin` 显示 UI | 🔶absorbed（R18：T031 嵌入+T040 真实 dist，随 T040 实测确认） |
 | T091 | Windows WebView2 运行时检测与首启提示 | T090 | 手动 | ⏸ |
 | T092 | CI 矩阵（win/linux/macos）+ 产物上传 | T090 | CI 绿 | ⏸ |
 | T093 | Linux webkitgtk 依赖说明 + README | T092 | 文档 | ⏸ |
