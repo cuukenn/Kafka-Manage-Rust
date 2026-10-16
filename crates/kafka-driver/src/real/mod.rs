@@ -5,15 +5,17 @@
 //! `list_topics` and the per-operation session plumbing, T071b adds
 //! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
 //! config writer (see [`admin`]), and T073 adds batch production (see [`producer`]).
-//! T074a adds offset lookups (see [`consumer`]) and T074b the subscription stream.
-//! The remaining domain methods answer `Unsupported` until T074b–T076 fill them in,
-//! so each of those cards is gated by the same `cargo check --features real`.
+//! T074a adds offset lookups (see [`consumer`]) and T074b the subscription stream,
+//! and T075a consumer-group metadata (see [`group`]). The remaining domain methods
+//! answer `Unsupported` until T075b–T076 fill them in, so each of those cards is
+//! gated by the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
 mod admin;
 mod config;
 mod consumer;
+mod group;
 mod producer;
 mod topic;
 
@@ -243,11 +245,13 @@ impl KafkaDriver for RealKafkaDriver {
     }
 
     async fn list_consumer_groups(&self) -> Result<Vec<GroupInfo>, DriverError> {
-        Err(self.require_unsupported("list_consumer_groups lands in T075"))
+        let live = self.live().await?;
+        group::list(&live).await
     }
 
-    async fn describe_consumer_groups(&self, _ids: &[String]) -> Result<Vec<GroupDetail>, DriverError> {
-        Err(self.require_unsupported("describe_consumer_groups lands in T075"))
+    async fn describe_consumer_groups(&self, ids: &[String]) -> Result<Vec<GroupDetail>, DriverError> {
+        let live = self.live().await?;
+        group::describe(&live, ids).await
     }
 
     async fn list_group_offsets(
@@ -271,6 +275,7 @@ impl KafkaDriver for RealKafkaDriver {
         DriverCapabilities {
             admin_api: true,
             topic_config_write: true,
+            consumer_groups: true,
             ..DriverCapabilities::default()
         }
     }
