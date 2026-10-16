@@ -219,7 +219,7 @@
 
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
-| T100 | Mock 全流程脚本化 E2E 测试 | T063,T050 | `cargo test --workspace` | ⏸ |
+| T100 | Mock 全流程脚本化 E2E 测试 | T063,T050 | `cargo test --workspace` | ✅（3d55d75；仅新增 main-bin E2E 测试 +535 行、产品码 0 改动；260 tests=259+1，clippy 零；审查 Approved 0C/0I/9m） |
 | T101 | criterion 基准：Mock produce/consume 吞吐 | T030 | `cargo bench -p kafka-driver` | ⏸ |
 | T102 | 长跑内存/句柄泄漏检查 | T063 | 手动 + 报告 | ⏸ |
 
