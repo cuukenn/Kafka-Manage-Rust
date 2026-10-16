@@ -74,7 +74,8 @@
   另装 `cmake 4.4.4` + `pkg-config` + brew `openssl@3`（`PKG_CONFIG_PATH=/opt/homebrew/opt/openssl@3/lib/pkgconfig`）。
   真实 Kafka 用 Docker Desktop：`scripts/kafka/docker-compose.yml`（KRaft 单节点，localhost:9092，
   cluster `5L6g3nShT-eMCtK--X86sw`）。**T070 已 ✅**（real 模块骨架 + 连接生命周期，2 文件 248 行；
-  真集群实测 connect/cluster_info/disconnect 通过）。下一步 T071（real topic 只读）。
+  真集群实测 connect/cluster_info/disconnect 通过）。**T071 按 250 行上限拆成 T071a/T071b**：T071a（会话脚手架
+  `Live`/`fetch_metadata` + `list_topics`）已 ✅，下一步 T071b（`describe_topics`）。
 
 ---
 
@@ -194,7 +195,8 @@
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T070 | `real` 模块骨架 + 配置映射 + 连接生命周期 | T001 | `cargo check -p kafka-driver --features real` | ✅（248 行/2 文件；check+clippy 绿；Docker Kafka 实测 connect/cluster_info/disconnect；R30/R32） |
-| T071 | real：cluster_info / list / describe topics | T070 | 真集群手动清单 | ⏸ |
+| T071a | real：每操作会话脚手架 + `list_topics` | T070 | 真集群手动清单 | ✅（92 行/2 文件；check+clippy 绿；Docker Kafka 实测 list_topics 出 t071-demo internal=false 3 分区 rf=1 与 __consumer_offsets internal=true 50 分区；断开 → NotConnected；R33/R35） |
+| T071b | real：`describe_topics`（分区明细 + 起止位点 + 配置） | T071a | 真集群手动清单 | ⏸ |
 | T072 | real：create / delete / update topic | T071 | 真集群手动清单 | ⏸ |
 | T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ⏸ |
 | T074 | real：subscribe 流 + list_offsets | T073 | 真集群手动清单 | ⏸ |

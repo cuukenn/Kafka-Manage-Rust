@@ -1,13 +1,15 @@
 //! The rdkafka-backed driver, compiled only under `--features real`.
 //!
 //! T070 lands the skeleton: config mapping (see [`config`]) and the connection
-//! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). Domain
-//! methods answer `Unsupported` until T071–T076 fill them in, so each of those
-//! cards is gated by the same `cargo check --features real`.
+//! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). T071a adds
+//! `list_topics` and the per-operation session plumbing (see [`topic`]). The
+//! remaining domain methods answer `Unsupported` until T071b–T076 fill them in,
+//! so each of those cards is gated by the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
 mod config;
+mod topic;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -35,11 +37,20 @@ pub use config::client_config;
 
 use crate::driver::{DriverCapabilities, DriverKind, KafkaDriver};
 
-/// A live connection: the admin client (kept alive so its background threads run)
-/// plus the metadata snapshot from `connect`.
+/// A live connection: the admin client (kept alive so its background threads run),
+/// the config it was opened with, and the metadata snapshot from `connect`.
 struct Session {
     admin: Arc<AdminClient<DefaultClientContext>>,
+    cfg: ClusterConfig,
     info: ClusterInfo,
+}
+
+/// What a domain operation needs from a live session: the client to call and the
+/// config whose timeouts bound it. Taken once per operation so no method holds the
+/// session lock across an await.
+pub(super) struct Live {
+    pub(super) admin: Arc<AdminClient<DefaultClientContext>>,
+    pub(super) cfg: ClusterConfig,
 }
 
 /// A driver backed by a real Kafka cluster via librdkafka.
@@ -61,6 +72,14 @@ impl RealKafkaDriver {
         Self { session: RwLock::new(None), name: RwLock::new(String::new()) }
     }
 
+    /// Snapshot of the live session, or `NotConnected` naming the cluster.
+    pub(super) async fn live(&self) -> Result<Live, DriverError> {
+        match self.session.read().await.as_ref() {
+            Some(session) => Ok(Live { admin: session.admin.clone(), cfg: session.cfg.clone() }),
+            None => Err(DriverError::NotConnected(self.name.read().await.clone())),
+        }
+    }
+
     fn require_unsupported(&self, what: &str) -> DriverError {
         DriverError::unsupported(format!("real driver: {what}"))
     }
@@ -68,11 +87,27 @@ impl RealKafkaDriver {
 
 /// Turns a failed metadata fetch into the right taxonomy entry: a broker that never
 /// answered is a `Timeout`, anything else is a `Connection` failure.
-fn metadata_error(cfg: &ClusterConfig, timeout: Duration, err: KafkaError) -> DriverError {
+fn metadata_error(server: &str, operation: &str, timeout: Duration, err: KafkaError) -> DriverError {
     if matches!(err, KafkaError::MetadataFetch(RDKafkaErrorCode::RequestTimedOut)) {
-        return DriverError::timeout("connect", timeout.as_millis() as u64);
+        return DriverError::timeout(operation, timeout.as_millis() as u64);
     }
-    DriverError::Connection { server: cfg.bootstrap_joined(), message: err.to_string() }
+    DriverError::Connection { server: server.to_string(), message: err.to_string() }
+}
+
+/// Fetches a metadata snapshot; librdkafka's client is blocking, so it runs on the
+/// blocking pool (R31). `topic` narrows the request to one topic.
+pub(super) async fn fetch_metadata(
+    live: &Live,
+    topic: Option<&str>,
+) -> Result<Metadata, DriverError> {
+    let admin = live.admin.clone();
+    let timeout = Duration::from_millis(live.cfg.timeouts.metadata_ms.max(1));
+    let server = live.cfg.bootstrap_joined();
+    let topic = topic.map(str::to_string);
+    tokio::task::spawn_blocking(move || admin.inner().fetch_metadata(topic.as_deref(), timeout))
+        .await
+        .map_err(|e| DriverError::other(format!("metadata task failed: {e}")))?
+        .map_err(|e| metadata_error(&server, "fetch_metadata", timeout, e))
 }
 
 /// Best-effort [`ClusterInfo`] from a metadata response.
@@ -106,19 +141,15 @@ impl KafkaDriver for RealKafkaDriver {
         let admin = conf.create::<AdminClient<DefaultClientContext>>().map_err(|e| {
             DriverError::Connection { server: cfg.bootstrap_joined(), message: e.to_string() }
         })?;
-        let admin = Arc::new(admin);
 
-        let timeout = Duration::from_millis(cfg.timeouts.metadata_ms.max(1));
-        let fetched = admin.clone();
+        let probe = Live { admin: Arc::new(admin), cfg: cfg.clone() };
         let started = Instant::now();
-        let metadata = tokio::task::spawn_blocking(move || fetched.inner().fetch_metadata(None, timeout))
-            .await
-            .map_err(|e| DriverError::other(format!("metadata task failed: {e}")))?
-            .map_err(|e| metadata_error(cfg, timeout, e))?;
+        let metadata = fetch_metadata(&probe, None).await?;
 
         let info = cluster_info_from(&metadata, cfg, started.elapsed());
         *self.name.write().await = cfg.name.clone();
-        *self.session.write().await = Some(Session { admin, info: info.clone() });
+        *self.session.write().await =
+            Some(Session { admin: probe.admin, cfg: cfg.clone(), info: info.clone() });
 
         tracing::info!(cluster = %cfg.name, brokers = info.brokers.len(), "real cluster connected");
         Ok(info)
@@ -148,11 +179,13 @@ impl KafkaDriver for RealKafkaDriver {
     }
 
     async fn list_topics(&self) -> Result<Vec<TopicInfo>, DriverError> {
-        Err(self.require_unsupported("list_topics lands in T071"))
+        let live = self.live().await?;
+        let metadata = fetch_metadata(&live, None).await?;
+        Ok(topic::infos(&metadata))
     }
 
     async fn describe_topics(&self, _req: &DescribeTopicsReq) -> Result<Vec<TopicDetail>, DriverError> {
-        Err(self.require_unsupported("describe_topics lands in T071"))
+        Err(self.require_unsupported("describe_topics lands in T071b"))
     }
 
     async fn create_topic(&self, _req: &CreateTopicReq) -> Result<(), DriverError> {
