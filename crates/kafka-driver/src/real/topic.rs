@@ -21,7 +21,7 @@ use super::Live;
 
 /// Kafka reserves `__`-prefixed names for its own topics, and librdkafka's
 /// metadata carries no internal flag, so the prefix is the only signal available.
-fn is_internal(name: &str) -> bool {
+pub(super) fn is_internal(name: &str) -> bool {
     name.starts_with("__")
 }
 

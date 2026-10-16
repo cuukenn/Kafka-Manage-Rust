@@ -3,12 +3,14 @@
 //! T070 lands the skeleton: config mapping (see [`config`]) and the connection
 //! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). T071a adds
 //! `list_topics` and the per-operation session plumbing, T071b adds
-//! `describe_topics` (see [`topic`]). The remaining domain methods answer
-//! `Unsupported` until T072–T076 fill them in, so each of those cards is gated by
-//! the same `cargo check --features real`.
+//! `describe_topics` (see [`topic`]), T072a adds topic create/delete (see
+//! [`admin`]). The remaining domain methods answer `Unsupported` until
+//! T072b–T076 fill them in, so each of those cards is gated by the same
+//! `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
+mod admin;
 mod config;
 mod topic;
 
@@ -46,12 +48,14 @@ struct Session {
     info: ClusterInfo,
 }
 
-/// What a domain operation needs from a live session: the client to call and the
-/// config whose timeouts bound it. Taken once per operation so no method holds the
-/// session lock across an await.
+/// What a domain operation needs from a live session: the client to call, the
+/// config whose timeouts bound it, and the broker count `connect` saw (used by the
+/// create-topic validation so it costs no extra metadata round trip; R38). Taken
+/// once per operation so no method holds the session lock across an await.
 pub(super) struct Live {
     pub(super) admin: Arc<AdminClient<DefaultClientContext>>,
     pub(super) cfg: ClusterConfig,
+    pub(super) brokers: usize,
 }
 
 /// A driver backed by a real Kafka cluster via librdkafka.
@@ -76,7 +80,11 @@ impl RealKafkaDriver {
     /// Snapshot of the live session, or `NotConnected` naming the cluster.
     pub(super) async fn live(&self) -> Result<Live, DriverError> {
         match self.session.read().await.as_ref() {
-            Some(session) => Ok(Live { admin: session.admin.clone(), cfg: session.cfg.clone() }),
+            Some(session) => Ok(Live {
+                admin: session.admin.clone(),
+                cfg: session.cfg.clone(),
+                brokers: session.info.brokers.len(),
+            }),
             None => Err(DriverError::NotConnected(self.name.read().await.clone())),
         }
     }
@@ -143,7 +151,7 @@ impl KafkaDriver for RealKafkaDriver {
             DriverError::Connection { server: cfg.bootstrap_joined(), message: e.to_string() }
         })?;
 
-        let probe = Live { admin: Arc::new(admin), cfg: cfg.clone() };
+        let probe = Live { admin: Arc::new(admin), cfg: cfg.clone(), brokers: 0 };
         let started = Instant::now();
         let metadata = fetch_metadata(&probe, None).await?;
 
@@ -194,16 +202,16 @@ impl KafkaDriver for RealKafkaDriver {
         topic::assemble(&live, planned).await
     }
 
-    async fn create_topic(&self, _req: &CreateTopicReq) -> Result<(), DriverError> {
-        Err(self.require_unsupported("create_topic lands in T072"))
+    async fn create_topic(&self, req: &CreateTopicReq) -> Result<(), DriverError> {
+        self.real_create_topic(req).await
     }
 
-    async fn delete_topics(&self, _req: &DeleteTopicsReq) -> Result<Vec<TopicDeleteResult>, DriverError> {
-        Err(self.require_unsupported("delete_topics lands in T072"))
+    async fn delete_topics(&self, req: &DeleteTopicsReq) -> Result<Vec<TopicDeleteResult>, DriverError> {
+        self.real_delete_topics(req).await
     }
 
     async fn update_topic_config(&self, _req: &UpdateTopicConfigReq) -> Result<(), DriverError> {
-        Err(self.require_unsupported("update_topic_config lands in T072"))
+        Err(self.require_unsupported("update_topic_config lands in T072b"))
     }
 
     async fn list_offsets(&self, _req: &ListOffsetsReq) -> Result<Vec<OffsetRange>, DriverError> {
@@ -241,9 +249,13 @@ impl KafkaDriver for RealKafkaDriver {
         Err(self.require_unsupported("commit_offsets lands in T075"))
     }
 
-    /// Only what this card implements; each card flips on what it lands (T071–T076).
+    /// Only what the landed cards implement; each card flips on what it lands
+    /// (T071–T076).
     fn capabilities(&self) -> DriverCapabilities {
-        DriverCapabilities::default()
+        DriverCapabilities {
+            admin_api: true,
+            ..DriverCapabilities::default()
+        }
     }
 
     fn kind(&self) -> DriverKind {
