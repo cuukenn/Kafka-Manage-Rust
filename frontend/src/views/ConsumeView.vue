@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // T046a consume panel: subscribe form + live message table + unsubscribe.
+// T046b adds the control bar: pause/resume toggle + state badge + seek (per-partition raw offset).
 // Wire facts (grep-verified, do not change without re-grepping):
 //  - consume.subscribe payload {clusterId, topic, start, follow} — SubscribeReq fields
 //    sit FLAT beside clusterId (webview-bridge handlers_consume.rs SubscribePayload);
@@ -100,6 +101,52 @@ async function unsubscribe(): Promise<void> {
   }
 }
 
+// ---- T046b controls: pause / resume / seek ----
+// Wire facts (grep-verified, handlers_consume.rs L31-46 + tests/router_consume.rs):
+//  - consume.pause / consume.resume payload {subscriptionId} ONLY; success = ok flag, data:null;
+//    subscription state flips to "paused" / "running" (router test pause_resume_seek_drive_state_transitions).
+//  - consume.seek payload {subscriptionId, topic, partition, offset} — SeekPayload takes a RAW i64
+//    offset per partition, NOT the OffsetStart tagged shape that consume.subscribe uses.
+//  - Router tests assert no invalid_state kind; failures arrive as error.kind via service_dto,
+//    so buttons are state-gated AND errors surface in the inline subError bar.
+// Pause is a Rust StreamControls semantic: events simply stop arriving; the frontend only sends
+// control commands and reflects state — rows already received stay in the table.
+const controlBusy = ref(false);
+const seekPartition = ref('0');
+const seekOffset = ref('');
+
+async function setPaused(paused: boolean): Promise<void> {
+  if (!subId.value || controlBusy.value) return;
+  subError.value = null;
+  controlBusy.value = true;
+  try {
+    await rpc(paused ? 'consume.pause' : 'consume.resume', { subscriptionId: subId.value });
+    subState.value = paused ? 'paused' : 'running';
+  } catch (e) {
+    subError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    controlBusy.value = false;
+  }
+}
+
+async function seek(): Promise<void> {
+  if (!subId.value || controlBusy.value) return;
+  subError.value = null;
+  const part = Number(seekPartition.value);
+  const off = Number(seekOffset.value);
+  if (!Number.isInteger(part) || part < 0) { subError.value = 'partition 必须是非负整数'; return; }
+  if (seekOffset.value === '' || !Number.isInteger(off) || off < 0) { subError.value = 'seek offset 必须是非负整数'; return; }
+  controlBusy.value = true;
+  try {
+    await rpc('consume.seek', { subscriptionId: subId.value, topic: topicName.value, partition: part, offset: off });
+    rows.value = []; // replay from the seek point: drop old rows so the replay is visible
+  } catch (e) {
+    subError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    controlBusy.value = false;
+  }
+}
+
 async function subscribe(): Promise<void> {
   const cluster = targetCluster.value;
   subError.value = null;
@@ -168,6 +215,15 @@ function fmtTs(ts: number): string {
         <button type="button" class="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50" :disabled="subscribing || !!subId || !topicName" @click="subscribe">{{ subscribing ? '订阅中…' : subId ? '已订阅' : '订阅' }}</button>
         <button type="button" class="rounded border border-rose-300 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/40" :disabled="!subId" @click="unsubscribe">退订</button>
         <span v-if="subId" class="text-xs text-slate-500 dark:text-slate-400">订阅 {{ subId }} · {{ subState }} · {{ rows.length }} 条</span>
+      </div>
+      <div v-if="subId" class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+        <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="subState === 'paused' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'">{{ subState }}</span>
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || subState !== 'running'" @click="setPaused(true)">暂停</button>
+        <button type="button" class="rounded border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" :disabled="controlBusy || subState !== 'paused'" @click="setPaused(false)">恢复</button>
+        <label :class="`${LBL} ml-2`">Seek</label>
+        <input v-model="seekPartition" type="number" min="0" placeholder="partition" :class="`${INP} w-24`" />
+        <input v-model="seekOffset" type="number" min="0" placeholder="offset" :class="`${INP} w-28`" />
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || seekOffset === ''" @click="seek">确认</button>
       </div>
       <p v-if="subError" class="mb-2 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">{{ subError }}</p>
       <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">消息（最新在上，上限 {{ MAX_ROWS }}）</p>
