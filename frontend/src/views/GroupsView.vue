@@ -8,10 +8,12 @@
 // Wire facts verified against kafka-core protocol.rs GROUP_* + group.rs DTOs
 // (camelCase serde) and webview-bridge tests/router_group.rs payload keys.
 // No group events on the event stream -> mount pull + manual refresh only.
-// 位点重置 (group.resetOffsets) lands in T048b — button intentionally disabled.
+// T048b: 位点重置 enabled via ResetOffsetsModal (group.resetOffsets wire verified:
+// flat {clusterId, groupId, topics, partitions, spec{type,value}, dryRun}).
 import { computed, onMounted, reactive } from 'vue';
 import { RpcError, rpc } from '../bridge/rpc';
 import { clusters, refresh as refreshClusters } from '../store/clusters';
+import ResetOffsetsModal from '../components/ResetOffsetsModal.vue';
 
 interface TopicPartition { topic: string; partition: number }
 /** GroupInfo (kafka-core group.rs, camelCase): state is snake_case on the wire. */
@@ -39,6 +41,7 @@ const panel = reactive({
   offsets: [] as OffsetRow[],
   detailLoading: false,
   detailError: null as string | null,
+  resetOpen: false,
 });
 
 /** Groups are per-cluster: use the first connected cluster (nav clears tree selection). */
@@ -60,6 +63,7 @@ function closeDetail(): void {
   panel.detail = null;
   panel.offsets = [];
   panel.detailError = null;
+  panel.resetOpen = false;
 }
 
 async function pull(): Promise<void> {
@@ -93,20 +97,37 @@ async function toggleDetail(row: GroupInfo): Promise<void> {
   panel.detail = null;
   panel.offsets = [];
   panel.detailError = null;
+  panel.resetOpen = false;
+  await loadDetail(cluster.id, row.groupId);
+}
+
+/** T048a review Important (R26): stale-response guard — after every await, drop
+ * any result whose groupId is no longer the selected row, so rapid row switching
+ * cannot render group A's data under group B. */
+async function loadDetail(clusterId: string, groupId: string): Promise<void> {
   panel.detailLoading = true;
   try {
     const [details, offs] = await Promise.all([
-      rpc<GroupDetail[]>('group.describe', { clusterId: cluster.id, ids: [row.groupId] }),
-      rpc<OffsetRow[]>('group.offsets', { clusterId: cluster.id, groupId: row.groupId, withLag: true }),
+      rpc<GroupDetail[]>('group.describe', { clusterId, ids: [groupId] }),
+      rpc<OffsetRow[]>('group.offsets', { clusterId, groupId, withLag: true }),
     ]);
-    const match = (Array.isArray(details) ? details : []).find((d) => d.info.groupId === row.groupId);
+    if (panel.selected !== groupId) return;
+    const match = (Array.isArray(details) ? details : []).find((d) => d.info.groupId === groupId);
     panel.detail = match ?? null;
     panel.offsets = Array.isArray(offs) ? offs : [];
   } catch (e) {
+    if (panel.selected !== groupId) return;
     panel.detailError = message(e);
   } finally {
-    panel.detailLoading = false;
+    if (panel.selected === groupId) panel.detailLoading = false;
   }
+}
+
+/** T048b: after a successful reset, close the modal and refetch the open detail. */
+async function onResetUpdated(): Promise<void> {
+  panel.resetOpen = false;
+  const cluster = targetCluster.value;
+  if (cluster && panel.selected) await loadDetail(cluster.id, panel.selected);
 }
 
 onMounted(() => {
@@ -171,7 +192,7 @@ onMounted(() => {
         <span v-if="panel.detail" class="text-xs text-slate-500 dark:text-slate-400">
           协调者 {{ panel.detail.info.coordinatorId ?? '—' }} · 订阅分配见成员表
         </span>
-        <button type="button" class="ml-auto rounded border border-slate-300 px-2 py-1 text-xs text-slate-400 dark:border-slate-600" disabled title="T048b 落地">重置位点</button>
+        <button type="button" class="ml-auto rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="!panel.detail || panel.detailLoading" @click="panel.resetOpen = true">重置位点</button>
         <button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" @click="closeDetail()">收起</button>
       </div>
       <p v-if="panel.detailError" class="mb-2 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">
@@ -223,5 +244,15 @@ onMounted(() => {
         <p v-if="panel.offsets.length === 0" class="text-xs text-slate-500 dark:text-slate-400">该组没有已提交位点。</p>
       </template>
     </div>
+
+    <!-- T048b offset-reset modal: per-partition rows, one group.resetOffsets request per distinct spec -->
+    <ResetOffsetsModal
+      v-if="panel.resetOpen && panel.selected && targetCluster"
+      :cluster-id="targetCluster.id"
+      :group-id="panel.selected"
+      :offsets="panel.offsets"
+      @close="panel.resetOpen = false"
+      @updated="onResetUpdated"
+    />
   </section>
 </template>
