@@ -210,6 +210,11 @@ impl ConsumeService {
     }
 
     /// Stops one subscription. Idempotent: a second call returns `false`, never an error.
+    ///
+    /// Graceful since T063 (R29): hands a `Stop` to the pump and joins the forwarding task
+    /// under a [`STOP_GRACE`] bound, so this is no longer instantaneous — it can block for
+    /// up to that window per subscription (only a driver pump that ignores `Stop` reaches
+    /// the bound). `stop_all` is sequential, so `shutdown` is bounded by `N x STOP_GRACE`.
     pub async fn stop(&self, subscription_id: &SubscriptionId) -> Result<bool, ServiceError> {
         let handle = self.subs().remove(subscription_id);
         let Some(handle) = handle else {
@@ -235,6 +240,9 @@ impl ConsumeService {
                 reason: Some(STOPPED_BY_CLIENT.to_string()),
             });
         }
+        // R29 order (M5): `subscription.done` was published *before* this join, so the bus
+        // may still carry `message.received` for the subscription after its done event —
+        // "done" is eventual, not a hard cutoff, while a stop is in flight.
         // Graceful hand-off (T063/R29): the pump breaks on Stop, its bounded message
         // channel closes, and the forwarding task ends on its own. Abort only if it
         // did not finish inside the grace window (e.g. a driver pump that ignores Stop).
@@ -324,7 +332,9 @@ impl ConsumeService {
         before - self.subs().len()
     }
 
-    /// Stops every subscription. Used on shutdown and on cluster disconnect (T030).
+    /// Stops every subscription sequentially. Its only production caller is
+    /// `App::shutdown` (which runs it before `disconnect_all`); no cluster-disconnect
+    /// hook calls it (review M3 — the pre-T063 "(T030)" note was stale).
     pub async fn stop_all(&self) -> usize {
         let ids = self
             .subs()

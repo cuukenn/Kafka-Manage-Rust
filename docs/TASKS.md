@@ -182,7 +182,7 @@
 | T060 | 消息节流/批量策略（速率 + 缓冲上限） | T037,T027 | `cargo test -p kafka-app --test consume_throttle` | ✅（65e8a4f；243 tests=239+4，clippy 零；审查 Approved 0C/0I/4m） |
 | T061 | 背压与丢弃策略（有界通道 + 溢出计数） | T060 | `--test consume_backpressure` | ✅（2282b2a；产品码 0 改动、仅 5 测试 +324 行；248 tests=243+5，clippy 零；审查 Approved 0C/0I/5m） |
 | T062 | 断线自动重连（指数退避 + 状态事件） | T024 | `--test reconnect` | ✅（3607dde+8cf2ec3；产品码 clusters.rs 1 文件 +166−6，无新 wire 事件；6 测试；254 tests=248+6，clippy 零；主模型审查 Approved，1 Important→已补过滤器/info 契约测试，余 Minor） |
-| T063 | 资源回收：关闭订阅 / 释放驱动 / 优雅退出 | T027 | `--test teardown` | ⏸ |
+| T063 | 资源回收：关闭订阅 / 释放驱动 / 优雅退出 | T027 | `--test teardown` | ✅（32ffe28 + 修复波；产品码仅 consume.rs +12/−2；259 tests=254+5，clippy 零；审查 Approved 0C/1I/6m，I1 为诚实性已修：teardown 套件无法区分优雅 join 与 abort，已在测试/注释中如实标注，mock「忽略 Stop」旋钮列为后续卡） |
 
 ### 阶段 6 · RealKafka 驱动（`--features real`，此阶段才需 Kafka）
 

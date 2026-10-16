@@ -1,9 +1,14 @@
 //! T063 — subscription teardown: graceful `stop`, natural end, and `App::shutdown` order.
 //!
-//! Everything runs against the mock driver. The forwarding task must end on its own
-//! after a `Stop` hand-off (R29) and when a bounded subscription drains, so the pump's
-//! RAII counter (`MockState::active_pumps`) is the leak detector: every wait below is a
+//! Everything runs against the mock driver. `MockState::active_pumps` (the pump's RAII
+//! counter) is the leak detector: it proves the pump released, and every wait below is a
 //! bounded poll with a real 2 s deadline, never a fixed sleep-and-hope.
+//!
+//! Coverage limit (review I1, accepted): the mock pump always breaks immediately on
+//! `Stop` (`mock/pump.rs`), so these tests cannot distinguish R29's bounded graceful join
+//! from a plain `task.abort()` — `STOP_GRACE` and the abort fallback branch are exercised
+//! by no test here. They pin "`Stop` is honoured and the pump is released", not the grace
+//! window itself; a mock knob that ignores `Stop` is the follow-up that would cover it.
 
 use std::time::Duration;
 
@@ -114,8 +119,9 @@ async fn pumps(mock: &MockKafkaDriver) -> u64 {
     mock.state_handle().read().await.active_pumps()
 }
 
-/// Bounded poll (real 2 s deadline) for the mock's live-pump counter: the single
-/// leak detector this card relies on. Fails loudly instead of hanging forever.
+/// Bounded poll (real 2 s deadline) for the mock's live-pump counter: the leak detector
+/// this card relies on — it witnesses the *pump's* release, not the forwarding task's exit
+/// (see the module note). Fails loudly instead of hanging forever.
 async fn wait_for_pumps(mock: &MockKafkaDriver, want: u64) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
     loop {
@@ -183,10 +189,12 @@ fn count_dones(events: &[AppEvent], id: &SubscriptionId) -> usize {
         .count()
 }
 
-/// (a) R29: `stop()` hands off to the pump instead of hard-killing the task, and the
-/// forwarding task really ends — the mock pump's RAII counter reaches zero.
+/// (a) `stop()` hands a `Stop` to the pump and the pump's RAII counter reaches zero.
+/// NOTE (review I1): this pins "`Stop` is honoured and the pump released", NOT R29's
+/// grace window — the mock pump breaks on `Stop` regardless of the join, so this test
+/// also passes under a plain `task.abort()`. See the module note.
 #[tokio::test]
-async fn stop_is_graceful_and_releases_the_pump() {
+async fn stop_hands_off_to_the_pump_and_releases_it() {
     let (consume, cluster, mut rx, mock) = harness("orders", 1, 3).await;
     let req = live("orders");
     let id = req.subscription_id.clone();
@@ -203,7 +211,7 @@ async fn stop_is_graceful_and_releases_the_pump() {
     assert_eq!(consume.active_count(), 0);
     assert_eq!(consume.total_count(), 0);
 
-    // Graceful hand-off: the pump exited on its own, so its guard dropped the counter.
+    // The pump honoured `Stop` and exited, so its guard dropped the counter.
     wait_for_pumps(&mock, 0).await;
 
     // Take whatever the pump had already handed over before it stopped...
@@ -289,8 +297,13 @@ async fn shutdown_is_idempotent_and_releases_everything() {
     wait_for_pumps(&mock, 0).await;
 }
 
-/// (d) `stop_all` racing a single `stop` on the same id: whichever wins, the wire sees
-/// exactly one `subscription.done`, and exactly one of the two calls reports "stopped".
+/// (d) `stop_all` alongside a single `stop` on the same id: the wire sees exactly one
+/// `subscription.done`, and exactly one of the two calls reports "stopped".
+/// NOTE (review M1): this is not a symmetric race — `stop` removes the registry entry
+/// before its first await, so `stop_all` is in practice the caller that does the work and
+/// the single `stop` returns early without touching `finished`. The invariant asserted
+/// (exactly-once done; a double-count would break it) is real; the losing path is not
+/// exercised.
 #[tokio::test]
 async fn stop_all_racing_a_single_stop_publishes_done_exactly_once() {
     let (consume, cluster, mut rx, mock) = harness("orders", 1, 3).await;
@@ -329,6 +342,9 @@ async fn stop_all_racing_a_single_stop_publishes_done_exactly_once() {
 /// (e) Regression pin: `shutdown()` stops subscriptions BEFORE disconnecting clusters.
 /// Observable order on the bus (`subscription.done` precedes `connection.state`
 /// disconnected), plus the post-conditions: driver handle gone, registry empty.
+/// Substitution (review M3): the card's literal "cluster disconnect → stop_all" linkage
+/// does not exist — `stop_all`'s only production caller is `shutdown` — so this pins
+/// `shutdown`'s internal order instead.
 #[tokio::test]
 async fn shutdown_stops_subscriptions_before_disconnecting_clusters() {
     let (app, cluster, mut rx, mock) = app_harness("orders", 3).await;
