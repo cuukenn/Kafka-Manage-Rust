@@ -170,8 +170,10 @@
 | T048a | 消费组页：列表+详情（成员/位点/lag）（R22 预拆） | T044 | npm build+cargo build+冒烟 | 🔶审查过（3c6341c，0C/1I→R26 并入 T048b），窗口项批量 |
 | T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | 🔶审查过（5547e74+9ceaf71，修复闭环），窗口项批量 |
 | T049a | 全局 toast + 全局 loading（R22 预拆） | T047b | npm build+cargo build+冒烟 | 🔶审查过（9c14cc9，0C/0I），窗口项批量 |
-| T049b | 日志面板（环形缓冲+事件/RPC 摘要） | T049a | npm build+cargo build+冒烟 | ⏸ |
-| T050 | 细节打磨：深浅色、空状态、快捷键 | T049 | 手动 | ⏸ |
+| T049b | 日志面板（环形缓冲+事件/RPC 摘要） | T049a | npm build+cargo build+冒烟 | 🔶审查过（fa606cd，0C/0I），窗口项批量 |
+| T050a | 空状态组件+集群/topic/消费组三视图接线（R22 预拆） | T049b | npm build+cargo build+冒烟 | ⏸ |
+| T050b | 消费空状态 + Alt+1..6 导航快捷键 | T050a | npm build+cargo build+冒烟 | ⏸ |
+| T050c | 弹窗 Esc 关闭（四弹窗各接局部 keydown） | T050b | npm build+cargo build+冒烟 | ⏸ |
 
 ### 阶段 5 · 事件驱动 NIO 流强化
 
