@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 use futures::StreamExt;
 use tokio::task::JoinHandle;
@@ -26,6 +27,10 @@ use crate::bus::{AppEvent, EventBus, SubscriptionStatus};
 
 /// Why a subscription stopped delivering.
 const STOPPED_BY_CLIENT: &str = "stopped by client";
+
+/// How long a stopped subscription's forwarding task gets to end on its own before
+/// it is aborted (T063/R29).
+const STOP_GRACE: Duration = Duration::from_secs(2);
 
 /// What the UI shows for one subscription.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -216,7 +221,7 @@ impl ConsumeService {
             state,
             delivered,
             finished,
-            task,
+            mut task,
             ..
         } = handle;
 
@@ -230,7 +235,12 @@ impl ConsumeService {
                 reason: Some(STOPPED_BY_CLIENT.to_string()),
             });
         }
-        task.abort();
+        // Graceful hand-off (T063/R29): the pump breaks on Stop, its bounded message
+        // channel closes, and the forwarding task ends on its own. Abort only if it
+        // did not finish inside the grace window (e.g. a driver pump that ignores Stop).
+        if tokio::time::timeout(STOP_GRACE, &mut task).await.is_err() {
+            task.abort();
+        }
         Ok(true)
     }
 
