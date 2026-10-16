@@ -5,13 +5,15 @@
 //! `list_topics` and the per-operation session plumbing, T071b adds
 //! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
 //! config writer (see [`admin`]), and T073 adds batch production (see [`producer`]).
-//! The remaining domain methods answer `Unsupported` until T074–T076 fill them in,
+//! T074a adds offset lookups (see [`consumer`]) and T074b the subscription stream.
+//! The remaining domain methods answer `Unsupported` until T074b–T076 fill them in,
 //! so each of those cards is gated by the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
 mod admin;
 mod config;
+mod consumer;
 mod producer;
 mod topic;
 
@@ -228,8 +230,8 @@ impl KafkaDriver for RealKafkaDriver {
         self.real_update_topic_config(req).await
     }
 
-    async fn list_offsets(&self, _req: &ListOffsetsReq) -> Result<Vec<OffsetRange>, DriverError> {
-        Err(self.require_unsupported("list_offsets lands in T074"))
+    async fn list_offsets(&self, req: &ListOffsetsReq) -> Result<Vec<OffsetRange>, DriverError> {
+        self.real_list_offsets(req).await
     }
 
     async fn produce(&self, req: ProduceReq) -> Result<Vec<ProduceResult>, DriverError> {

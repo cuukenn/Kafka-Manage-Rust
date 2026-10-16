@@ -77,7 +77,7 @@
   真集群实测 connect/cluster_info/disconnect 通过）。**T071 按 250 行上限拆成 T071a/T071b**：T071a（会话脚手架
   `Live`/`fetch_metadata` + `list_topics`）已 ✅，T071b（`describe_topics`：分区明细 + 起止位点 + 只回被覆盖的
   配置）已 ✅；**T072 同样按 250 行上限拆成 T072a/T072b**：T072a（`create_topic` / `delete_topics` + admin 脚手架）
-  已 ✅，**T072b（`update_topic_config`：先读回被覆盖项、合并后整体替换）已 ✅**；**T073（produce：整批入队 + 投递回执，并按请求顺序回填）已 ✅**，同时显式关掉 `allow.auto.create.topics`，消掉了 T072b 探测不存在主题时把主题建出来的副作用；下一步 T074（subscribe 流 + list_offsets）。
+  已 ✅，**T072b（`update_topic_config`：先读回被覆盖项、合并后整体替换）已 ✅**；**T073（produce：整批入队 + 投递回执，并按请求顺序回填）已 ✅**，同时显式关掉 `allow.auto.create.topics`，消掉了 T072b 探测不存在主题时把主题建出来的副作用；**T074 按 250 行上限拆成 T074a/T074b**：T074a（`list_offsets`：分区展开 + 一次批量取水印 + 借一次性 consumer 解析时间戳）已 ✅；下一步 T074b（subscribe 流）。
 
 ---
 
@@ -202,7 +202,8 @@
 | T072a | real：create / delete topic | T071b | 真集群手动清单 | ✅（193 行/3 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测建 3 分区 rf=1 带 retention.ms、重复建 → AlreadyExists、一次删三名逐项汇报（成功 / `unknown topic` / 拒绝 internal）、broker 侧 `--list` 复核已消失；R38/R40） |
 | T072b | real：update topic config（合并后整体替换） | T072a | 真集群手动清单 | ✅（94 行/3 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测双项写入、只写一项时另一项保留、unset 单项/全部、不存在的主题 → NotFound、空名 → InvalidConfig，并用 `kafka-configs.sh --describe` 复核；R37/R39/R41） |
 | T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ✅（212 行/3 文件；R42/R43/R44） |
-| T074 | real：subscribe 流 + list_offsets | T073 | 真集群手动清单 | ⏸ |
+| T074a | real：list_offsets（起止位点 + 时间点解析） | T073 | 真集群手动清单 | ✅（206 行/2 文件；R45/R46/R47/R48） |
+| T074b | real：subscribe 流（有界/追尾 + pause/resume/seek/stop） | T074a | 真集群手动清单 | ⏸ |
 | T075 | real：消费组 + reset/commit 位点 | T071 | 真集群手动清单 | ⏸ |
 | T076 | real：SASL/SSL 参数映射（来自 `ClusterConfig`） | T070 | 真集群手动清单 | ⏸ |
 | T077 | Mock/Real 行为对齐测试架（`#[ignore]` + 环境变量门控） | T071–T076 | `cargo test -p kafka-driver -- --ignored` | ⏸ |
