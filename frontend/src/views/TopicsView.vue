@@ -8,6 +8,7 @@
 // -> [{name, error}]; topic.changed {clusterId, topic, change} -> coalesced re-pull.
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import TopicConfigModal from '../components/TopicConfigModal.vue';
+import EmptyState from '../components/EmptyState.vue';
 import TopicModal from '../components/TopicModal.vue';
 import { on } from '../bridge/events';
 import { rpc } from '../bridge/rpc';
@@ -112,9 +113,7 @@ onUnmounted(() => off?.());
 
     <p v-if="tableError" class="mb-2 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">{{ tableError }}</p>
 
-    <p v-if="!targetCluster" class="text-sm text-slate-500 dark:text-slate-400">
-      未找到已连接集群：请先在集群页连接，或在左侧树中选择一个 topic 节点。
-    </p>
+    <EmptyState v-if="!targetCluster" title="未找到已连接集群" hint="请先在集群页连接，或在左侧树中选择一个 topic 节点。" />
 
     <table v-else class="w-full border-collapse text-left text-xs">
       <thead>
@@ -158,11 +157,9 @@ onUnmounted(() => off?.());
             </button>
           </td>
         </tr>
-        <tr v-if="!loading && rows.length === 0">
-          <td colspan="5" class="px-2 py-3 text-slate-500 dark:text-slate-400">该集群暂无 topic。</td>
-        </tr>
       </tbody>
     </table>
+    <EmptyState v-if="!loading && rows.length === 0" title="该集群暂无 topic" hint="点击「新建 Topic」创建第一个 topic。" />
 
     <TopicModal
       v-if="showCreate && targetCluster"

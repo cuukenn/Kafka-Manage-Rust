@@ -14,6 +14,7 @@ import { computed, onMounted, reactive } from 'vue';
 import { RpcError, rpc } from '../bridge/rpc';
 import { clusters, refresh as refreshClusters } from '../store/clusters';
 import ResetOffsetsModal from '../components/ResetOffsetsModal.vue';
+import EmptyState from '../components/EmptyState.vue';
 
 interface TopicPartition { topic: string; partition: number }
 /** GroupInfo (kafka-core group.rs, camelCase): state is snake_case on the wire. */
@@ -148,9 +149,7 @@ onMounted(() => {
     <p v-if="panel.error" class="mb-3 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">
       {{ panel.error }}
     </p>
-    <p v-if="!targetCluster" class="mb-3 text-sm text-slate-500 dark:text-slate-400">
-      未找到已连接的集群——请先在「集群」页连接一个集群。
-    </p>
+    <EmptyState v-if="!targetCluster" title="未找到已连接的集群" hint="请先在「集群」页连接一个集群。" />
     <table class="w-full border-collapse text-left text-xs">
       <thead>
         <tr class="border-b border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400">
@@ -181,9 +180,8 @@ onMounted(() => {
         </tr>
       </tbody>
     </table>
-    <p v-if="panel.rows.length === 0" class="text-sm text-slate-500 dark:text-slate-400">
-      {{ panel.loading ? '加载中…' : (targetCluster ? '该集群暂无消费组。' : '暂无消费组。') }}
-    </p>
+    <p v-if="panel.loading && panel.rows.length === 0" class="text-sm text-slate-500 dark:text-slate-400">加载中…</p>
+    <EmptyState v-else-if="targetCluster && panel.rows.length === 0" title="该集群暂无消费组" hint="Mock 集群需先有消费者组：新建的 Mock 集群默认没有消费组，请先启动消费者订阅。" />
 
     <!-- T048a row-click inline detail: members + committed offsets (lag from wire) -->
     <div v-if="panel.selected" class="mt-4 rounded border border-slate-200 p-3 dark:border-slate-700">

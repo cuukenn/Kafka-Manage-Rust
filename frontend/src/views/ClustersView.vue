@@ -5,6 +5,7 @@
 // RpcError surfaces as an inline error bar (toast lands with T049).
 import { onMounted, onUnmounted, ref } from 'vue';
 import ClusterModal from '../components/ClusterModal.vue';
+import EmptyState from '../components/EmptyState.vue';
 import { clusters, connectCluster, deleteCluster, disconnectCluster, startClusterEvents, type ClusterRow } from '../store/clusters';
 
 const modal = ref<{ initial: ClusterRow | null } | null>(null);
@@ -67,9 +68,12 @@ function remove(row: ClusterRow): void {
         </tr>
       </tbody>
     </table>
-    <p v-if="clusters.rows.length === 0" class="text-sm text-slate-500 dark:text-slate-400">
-      {{ clusters.loading ? '加载中…' : '暂无集群，点击「新建集群」添加。' }}
-    </p>
+    <p v-if="clusters.loading && clusters.rows.length === 0" class="text-sm text-slate-500 dark:text-slate-400">加载中…</p>
+    <EmptyState v-else-if="clusters.rows.length === 0" title="还没有集群" hint="添加第一个集群后即可连接并浏览 Topics 与消费组。">
+      <template #action>
+        <button type="button" class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700" @click="modal = { initial: null }">新建集群</button>
+      </template>
+    </EmptyState>
     <ClusterModal v-if="modal" :initial="modal.initial" @close="modal = null" />
   </section>
 </template>
