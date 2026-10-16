@@ -32,6 +32,9 @@ export interface PartitionRow {
 /** Cache key for a topic node (partitions / expanded / loading / errors). */
 export const partKey = (clusterId: string, topic: string): string => `${clusterId}\u0000${topic}`;
 
+/** topic.changed kinds that justify dropping tree caches (see startTreeEvents A1 note). */
+const STRUCTURAL_CHANGES = new Set(['created', 'deleted', 'config_changed']);
+
 export const tree = reactive({
   /** clusterId -> topics; undefined = never fetched (lazy). */
   topics: {} as Record<string, TopicRow[] | undefined>,
@@ -170,8 +173,14 @@ export function startTreeEvents(): () => void {
     }
   });
   const offTopic = on('topic.changed', (e) => {
-    const p = (e.payload ?? {}) as { clusterId?: string };
-    if (p.clusterId) invalidateCluster(p.clusterId);
+    // A1 (stage-4 final review): invalidate only on explicitly STRUCTURAL change
+    // kinds. Wire kinds (kafka-app bus.rs TopicChange, serde snake_case):
+    // "created" | "deleted" | "config_changed" | "messages". "messages" fires on
+    // every produce burst; clearing + refetching the whole cluster tree for it
+    // caused flicker + an RPC storm in this shell-lifetime component. Unknown
+    // kinds deliberately do NOT invalidate (explicit-structural rule).
+    const p = (e.payload ?? {}) as { clusterId?: string; change?: string };
+    if (p.clusterId && STRUCTURAL_CHANGES.has(p.change ?? '')) invalidateCluster(p.clusterId);
   });
   void refreshClusters();
   return () => { offConn(); offTopic(); };

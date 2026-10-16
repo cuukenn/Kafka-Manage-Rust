@@ -134,6 +134,7 @@ async function unsubscribe(): Promise<void> {
   if (!subId.value) return;
   const id = subId.value;
   subId.value = null; // clear first: duplicate-guard + no double-send on unmount
+  subClusterId = null;
   try {
     await rpc('consume.unsubscribe', { subscriptionId: id });
   } catch {
@@ -232,6 +233,7 @@ async function subscribe(): Promise<void> {
     rows.value = [];
     subDone.value = false;
     subId.value = info.subscriptionId;
+    subClusterId = cluster.id; // B2: record which cluster this subscription lives on
     subState.value = info.state ?? 'running';
   } catch (e) {
     subError.value = e instanceof Error ? e.message : String(e);
@@ -240,10 +242,36 @@ async function subscribe(): Promise<void> {
   }
 }
 
+// B2 (stage-4 final review): a subscription belongs to the cluster it was created
+// on. If that cluster disconnects while this view is mounted, targetCluster
+// silently falls back to another connected cluster — the old subscription must not
+// keep appending rows under the wrong cluster. Track the owning cluster and tear
+// the subscription down (fire-and-forget unsubscribe + state/form reset) whenever
+// the effective target id no longer matches it.
+let subClusterId: string | null = null;
+
+function resetSubscription(): void {
+  const id = subId.value;
+  subId.value = null; // clear first: no double-send (same discipline as unsubscribe())
+  subClusterId = null;
+  if (id) void rpc('consume.unsubscribe', { subscriptionId: id }).catch(() => {}); // fire-and-forget: cluster may already be gone
+  rows.value = [];
+  subState.value = '';
+  subDone.value = false;
+  subError.value = null;
+  topicName.value = '';
+  startMode.value = 'earliest';
+  offsetText.value = '';
+  follow.value = true;
+}
+
 let offMessage: (() => void) | null = null;
 let offSubState: (() => void) | null = null;
 let offSubDone: (() => void) | null = null;
-watch(() => targetCluster.value?.id, () => void loadTopics());
+watch(() => targetCluster.value?.id, () => {
+  void loadTopics();
+  if (subId.value && targetCluster.value?.id !== subClusterId) resetSubscription();
+});
 onMounted(() => {
   if (ui.selectedTopic && !topicName.value) topicName.value = ui.selectedTopic.topic;
   void loadTopics();

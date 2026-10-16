@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // T044a topic table: topic.list for the current cluster (tree selection wins,
 // else first connected cluster from clusters store), create modal, row delete
-// with confirm + tree invalidation, inline error bars. Wire facts (narrow greps
+// with T048b inline confirm bar (T044a lesson: never window.confirm) + tree
+// invalidation, inline error bars. Wire facts (narrow greps
 // kafka-core protocol.rs/topic.rs, webview-bridge tests/router_topic_produce.rs):
 // topic.list {clusterId} -> TopicInfo[] camelCase; topic.create {clusterId,
 // name, numPartitions, replicationFactor}; topic.delete {clusterId, names[]}
 // -> [{name, error}]; topic.changed {clusterId, topic, change} -> coalesced re-pull.
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import TopicConfigModal from '../components/TopicConfigModal.vue';
 import EmptyState from '../components/EmptyState.vue';
 import TopicModal from '../components/TopicModal.vue';
@@ -68,9 +69,22 @@ function refresh(): void {
   });
 }
 
+// T048b inline second-confirm pattern (T044a lesson: never window.confirm —
+// WebView2 may suppress it, so the destructive action silently never fires).
+// First click arms an amber confirm row under that topic's row; second click
+// deletes; any other interaction (refresh/create/config/cluster switch/cancel)
+// disarms.
+const deleteTarget = ref<string | null>(null);
+
+function requestDelete(name: string): void {
+  if (deleteTarget.value === name) void removeTopic(name);
+  else deleteTarget.value = name;
+}
+
 async function removeTopic(name: string): Promise<void> {
   const cluster = targetCluster.value;
-  if (!cluster || !window.confirm(`删除 topic「${name}」？`)) return;
+  if (!cluster) return;
+  deleteTarget.value = null; // disarm before the destructive request
   try {
     const results = await rpc<{ name: string; error: string | null }[]>('topic.delete', {
       clusterId: cluster.id,
@@ -96,6 +110,8 @@ onMounted(() => {
   refresh();
 });
 onUnmounted(() => off?.());
+// Switching clusters invalidates any armed delete (the armed name belongs to the old table).
+watch(() => targetCluster.value?.id, () => { deleteTarget.value = null; });
 </script>
 
 <template>
@@ -106,8 +122,8 @@ onUnmounted(() => off?.());
       </h2>
       <button v-if="ui.selectedTopic" type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" @click="clearTopicSelection">返回集群列表</button>
       <div class="ml-auto flex gap-2">
-        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="!targetCluster || loading" @click="refresh">刷新</button>
-        <button type="button" class="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50" :disabled="!targetCluster" @click="showCreate = true">新建 Topic</button>
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="!targetCluster || loading" @click="deleteTarget = null; refresh()">刷新</button>
+        <button type="button" class="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50" :disabled="!targetCluster" @click="showCreate = true; deleteTarget = null">新建 Topic</button>
       </div>
     </div>
 
@@ -126,37 +142,47 @@ onUnmounted(() => off?.());
         </tr>
       </thead>
       <tbody>
-        <tr
-          v-for="row in rows"
-          :key="row.name"
-          class="border-b border-slate-100 dark:border-slate-800"
-          :class="
-            ui.selectedTopic && ui.selectedTopic.clusterId === targetCluster.id && ui.selectedTopic.topic === row.name
-              ? 'bg-emerald-50 dark:bg-emerald-900/40'
-              : ''
-          "
-        >
-          <td class="px-2 py-1.5 font-medium text-slate-800 dark:text-slate-100">{{ row.name }}</td>
-          <td class="px-2 py-1.5">{{ row.internal ? '是' : '—' }}</td>
-          <td class="px-2 py-1.5">{{ row.partitionCount }}</td>
-          <td class="px-2 py-1.5">{{ row.replicationFactor }}</td>
-          <td class="px-2 py-1.5 text-right space-x-1.5">
-            <button
-              type="button"
-              class="rounded border border-slate-300 px-2 py-0.5 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-              @click="configTopic = row.name"
-            >
-              配置
-            </button>
-            <button
-              type="button"
-              class="rounded border border-rose-300 px-2 py-0.5 text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/40"
-              @click="removeTopic(row.name)"
-            >
-              删除
-            </button>
-          </td>
-        </tr>
+        <template v-for="row in rows" :key="row.name">
+          <tr
+            class="border-b border-slate-100 dark:border-slate-800"
+            :class="
+              ui.selectedTopic && ui.selectedTopic.clusterId === targetCluster.id && ui.selectedTopic.topic === row.name
+                ? 'bg-emerald-50 dark:bg-emerald-900/40'
+                : ''
+            "
+          >
+            <td class="px-2 py-1.5 font-medium text-slate-800 dark:text-slate-100">{{ row.name }}</td>
+            <td class="px-2 py-1.5">{{ row.internal ? '是' : '—' }}</td>
+            <td class="px-2 py-1.5">{{ row.partitionCount }}</td>
+            <td class="px-2 py-1.5">{{ row.replicationFactor }}</td>
+            <td class="px-2 py-1.5 text-right space-x-1.5">
+              <button
+                type="button"
+                class="rounded border border-slate-300 px-2 py-0.5 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                @click="configTopic = row.name; deleteTarget = null"
+              >
+                配置
+              </button>
+              <button
+                type="button"
+                class="rounded border border-rose-300 px-2 py-0.5 text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/40"
+                @click="requestDelete(row.name)"
+              >
+                删除
+              </button>
+            </td>
+          </tr>
+          <!-- T048b inline confirm bar (T044a lesson: never window.confirm): armed under the target row -->
+          <tr v-if="deleteTarget === row.name">
+            <td colspan="5" class="px-2 py-1">
+              <div class="flex items-center gap-2 rounded bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                <span>确认删除 topic「{{ row.name }}」？此操作不可恢复。</span>
+                <button type="button" class="ml-auto rounded border border-rose-400 px-2 py-1 font-medium text-rose-700 hover:bg-rose-200 dark:border-rose-500 dark:text-rose-200 dark:hover:bg-rose-800" @click="requestDelete(row.name)">确认删除</button>
+                <button type="button" class="rounded border border-amber-400 px-2 py-1 hover:bg-amber-200 dark:border-amber-600 dark:hover:bg-amber-800" @click="deleteTarget = null">取消</button>
+              </div>
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
     <EmptyState v-if="targetCluster && !loading && rows.length === 0" title="该集群暂无 topic" hint="点击「新建 Topic」创建第一个 topic。" />
