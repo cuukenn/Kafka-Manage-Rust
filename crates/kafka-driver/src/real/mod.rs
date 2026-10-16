@@ -280,6 +280,8 @@ impl KafkaDriver for RealKafkaDriver {
             consumer_groups: true,
             offset_reset: true,
             offset_commit: true,
+            sasl: true,
+            ssl: true,
             ..DriverCapabilities::default()
         }
     }

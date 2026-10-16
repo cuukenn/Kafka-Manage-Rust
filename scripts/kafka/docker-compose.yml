@@ -1,18 +1,32 @@
 # Single-node Kafka (KRaft, no ZooKeeper) for the Stage 6 "real" driver.
 #
-# Run from this directory:   docker compose up -d
+# Run from this directory:   ./gen-secrets.sh && docker compose up -d
 # Follow the logs:           docker compose logs -f kafka
 # Stop:                      docker compose down
 # Wipe all data:             docker compose down -v
 #
 # The broker is reachable from the host at localhost:9092 (PLAINTEXT), which is
-# what the UI stores as `bootstrapServers` for a real cluster.
+# what the UI stores as `bootstrapServers` for a real cluster. Two extra
+# listeners exist so the SASL/SSL branch of the driver can be exercised against
+# something real (see `gen-secrets.sh` for the TLS material):
+#
+#   localhost:9094  SASL_PLAINTEXT/PLAIN   alice / alice-secret
+#   localhost:9095  SSL                     CA at secrets/ca.pem
+#
+# The SASL listener is named `SASL` rather than `SASL_PLAINTEXT` on purpose:
+# the image maps `KAFKA_A_B` to the property `a.b`, and Kafka's per-listener
+# config spells the listener name with the underscore intact, so the longer
+# name would become the unmatchable `listener.name.sasl.plaintext.plain...`.
 services:
   kafka:
     image: apache/kafka:3.9.1
     container_name: rs-kafka-ui-dev
     ports:
       - "9092:9092"
+      - "9094:9094"
+      - "9095:9095"
+    volumes:
+      - ./secrets:/etc/kafka/secrets:ro
     environment:
       # --- identity -------------------------------------------------------
       KAFKA_NODE_ID: 1
@@ -21,13 +35,28 @@ services:
       # Fixed so repeated `down -v && up` cycles keep the same cluster id.
       CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
       # --- listeners ------------------------------------------------------
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,SASL://:9094,SSL://:9095
       # localhost (not the container name): the Rust client runs on the host.
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,SASL://localhost:9094,SSL://localhost:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SASL:SASL_PLAINTEXT,SSL:SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # --- SASL/PLAIN credentials for the `SASL` listener -----------------
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      # The image maps `KAFKA_A_B` to the property `a.b`, and Kafka looks the
+      # per-listener JAAS config up under the *lowercased listener name*, so a
+      # listener called SASL_PLAINTEXT could never be reached this way.
+      KAFKA_LISTENER_NAME_SASL_PLAIN_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret" user_admin="admin-secret" user_alice="alice-secret";'
+      # --- TLS for the `SSL` listener (see gen-secrets.sh) ----------------
+      # The image derives ssl.keystore.location from the filename and reads the
+      # passwords out of the credential files.
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka.keystore.jks
+      KAFKA_SSL_KEY_CREDENTIALS: key_credentials
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_credentials
+      KAFKA_SSL_KEYSTORE_TYPE: JKS
+      # The dev client authenticates with the CA alone.
+      KAFKA_SSL_CLIENT_AUTH: none
       # --- single-broker friendly defaults --------------------------------
       # RF=1 everywhere: a one-broker cluster cannot host replicas.
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
