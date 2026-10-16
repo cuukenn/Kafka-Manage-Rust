@@ -6,13 +6,16 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::Serialize;
 use tokio::sync::Mutex as AsyncMutex;
 
 use kafka_core::cluster::{ClusterConfig, ClusterInfo, ConnectionState};
-use kafka_core::error::{DriverError, StorageError};
+use kafka_core::error::{DriverError, ErrorKind, StorageError};
 use kafka_core::ClusterId;
 use kafka_driver::driver::{DynDriver, driver_for};
 use kafka_driver::mock::MockKafkaDriver;
@@ -28,6 +31,37 @@ use super::{ServiceError, store_task};
 /// whether or not the guard wraps the driver; real drivers answer `None`.
 fn mock_of(driver: &DynDriver) -> Option<&MockKafkaDriver> {
     driver.as_any().and_then(|any| any.downcast_ref::<MockKafkaDriver>())
+}
+
+// ---- reconnect supervision (T062, ruling R28) ------------------------------
+
+/// Exponential reconnect backoff steps in seconds; the last entry caps the wait.
+pub const RECONNECT_BACKOFF_SECS: [u64; 6] = [1, 2, 4, 8, 16, 30];
+
+/// Wait before reconnect attempt number `attempt` (0-based), capped at the last
+/// table entry. A successful `connected` ends the supervisor task, so the next
+/// failure restarts the table from 1s. Pure function: unit-testable without waiting.
+pub fn reconnect_backoff(attempt: usize) -> Duration {
+    let last = RECONNECT_BACKOFF_SECS.len() - 1;
+    Duration::from_secs(RECONNECT_BACKOFF_SECS[attempt.min(last)])
+}
+
+/// Which failures mean "the connection itself is unhealthy" and must trigger the
+/// reconnect supervisor. The card's timeout/transport/connection_lost map onto the
+/// actual taxonomy as `ErrorKind::Timeout` and `ErrorKind::Connection`
+/// (kafka-core `error.rs`). `NotConnected` is deliberately excluded: it is what a
+/// manually disconnected cluster reports, and those calls must not resurrect a
+/// cancelled supervisor. `Broker` is excluded too: the connection works, the broker
+/// merely refused the request.
+fn is_connection_class(kind: ErrorKind) -> bool {
+    matches!(kind, ErrorKind::Connection | ErrorKind::Timeout)
+}
+
+/// Handle for one cluster's running reconnect supervisor task. `cancel` is polled by
+/// the task between attempts; `abort` is the hard stop for a task parked in a sleep.
+struct Supervisor {
+    cancel: Arc<AtomicBool>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 /// One row of the cluster list: the saved config plus what the UI needs to render it.
@@ -48,6 +82,8 @@ struct Slot {
     gate: AsyncMutex<()>,
     driver: Mutex<Option<DynDriver>>,
     state: Mutex<ConnectionState>,
+    /// Running reconnect supervisor for this cluster, if any (T062).
+    supervisor: Mutex<Option<Supervisor>>,
 }
 
 /// `DynDriver` is `Arc<dyn KafkaDriver>` and `dyn KafkaDriver` is not `Debug`, so this cannot be
@@ -67,6 +103,7 @@ impl Slot {
             gate: AsyncMutex::new(()),
             driver: Mutex::new(None),
             state: Mutex::new(ConnectionState::Disconnected),
+            supervisor: Mutex::new(None),
         }
     }
 
@@ -205,8 +242,16 @@ impl ClusterService {
     // ---- connections -----------------------------------------------------
 
     /// Connects (or returns the existing connection). Serialized per cluster: concurrent
-    /// callers share one driver instance and one pair of state events.
+    /// callers share one driver instance and one pair of state events. A manual connect
+    /// also supersedes any running reconnect supervisor (T062).
     pub async fn connect(&self, id: &ClusterId) -> Result<ClusterInfo, ServiceError> {
+        self.cancel_supervisor(id);
+        self.connect_inner(id).await
+    }
+
+    /// The connect machinery itself, shared with the reconnect supervisor so its
+    /// attempts do not cancel the very task running them.
+    async fn connect_inner(&self, id: &ClusterId) -> Result<ClusterInfo, ServiceError> {
         let slot = self.slot_of(id);
         let _gate = slot.gate.lock().await;
 
@@ -250,8 +295,15 @@ impl ClusterService {
     }
 
     /// Disconnects and forgets the driver instance. Idempotent: a cluster that is not
-    /// connected still ends up reported as `disconnected`.
+    /// connected still ends up reported as `disconnected`. A manual disconnect (and the
+    /// delete/shutdown paths that run it) cancels the cluster's reconnect supervisor.
     pub async fn disconnect(&self, id: &ClusterId) -> Result<(), ServiceError> {
+        self.cancel_supervisor(id);
+        self.disconnect_inner(id).await
+    }
+
+    /// The disconnect machinery itself, shared with the reconnect supervisor.
+    async fn disconnect_inner(&self, id: &ClusterId) -> Result<(), ServiceError> {
         let slot = self.slot_of(id);
         let _gate = slot.gate.lock().await;
 
@@ -279,10 +331,118 @@ impl ClusterService {
         }
     }
 
-    /// `cluster.info` — the live view of a connected cluster.
+    /// `cluster.info` — the live view of a connected cluster. A connection-class
+    /// failure here degrades the cluster and starts its reconnect supervisor (T062).
     pub async fn info(&self, id: &ClusterId) -> Result<ClusterInfo, ServiceError> {
         let driver = self.driver(id)?;
-        Ok(driver.cluster_info().await?)
+        match driver.cluster_info().await {
+            Ok(info) => Ok(info),
+            Err(err) => {
+                self.report_driver_error(id, &err);
+                Err(err.into())
+            }
+        }
+    }
+
+    // ---- reconnect supervision (T062, ruling R28) --------------------------
+
+    /// Marks the cluster `degraded` (one `connection.state` event with the reason) and
+    /// starts its reconnect supervisor when a runtime driver call failed with a
+    /// connection-class error. Other services' call sites can report their driver
+    /// failures through this same seam. Returns whether supervision started.
+    pub fn report_driver_error(&self, id: &ClusterId, err: &DriverError) -> bool {
+        if !is_connection_class(err.kind()) {
+            return false;
+        }
+        self.start_supervisor(id, err.to_string())
+    }
+
+    fn cancel_supervisor(&self, id: &ClusterId) {
+        if let Some(slot) = self.peek_slot(id) {
+            Self::cancel_slot(&slot);
+        }
+    }
+
+    fn cancel_slot(slot: &Arc<Slot>) {
+        if let Ok(mut guard) = slot.supervisor.lock() {
+            if let Some(supervisor) = guard.take() {
+                supervisor.cancel.store(true, Ordering::SeqCst);
+                supervisor.task.abort();
+            }
+        }
+    }
+
+    /// Spawns the supervisor task unless one is already running, the cluster is not
+    /// live, or its slot entry was cancelled while we raced with a manual disconnect.
+    fn start_supervisor(&self, id: &ClusterId, reason: String) -> bool {
+        let slot = self.slot_of(id);
+        let mut guard = match slot.supervisor.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if guard.is_some() || !matches!(slot.state_of(), ConnectionState::Connected | ConnectionState::Degraded) {
+            return false;
+        }
+        // Health degrades; the live driver instance stays in its slot.
+        if let Ok(mut state) = slot.state.lock() {
+            *state = ConnectionState::Degraded;
+        }
+        self.publish_state(id, ConnectionState::Degraded, Some(reason));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let task = {
+            let svc = self.clone();
+            let slot = Arc::clone(&slot);
+            let flag = Arc::clone(&cancel);
+            let id = id.clone();
+            tokio::spawn(async move { svc.reconnect_loop(id, slot, flag).await; })
+        };
+        guard.replace(Supervisor { cancel, task });
+        true
+    }
+
+    /// One cluster's reconnect loop (R28): driver teardown + fresh connect, retrying on
+    /// the backoff table. `connect_inner` publishes `connecting`/`connected`/`error`,
+    /// so the UI sees the whole sequence without new wire events. A success ends the
+    /// task (which resets the table for the next failure); a manual disconnect/delete
+    /// cancels it through `cancel`, and a config that can never connect gives up.
+    async fn reconnect_loop(self, id: ClusterId, slot: Arc<Slot>, cancel: Arc<AtomicBool>) {
+        let mut attempt = 0usize;
+        let mut needs_teardown = true;
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            if needs_teardown {
+                // Best effort: a failed teardown still proceeds to the fresh connect.
+                if let Err(err) = self.disconnect_inner(&id).await {
+                    tracing::warn!(cluster = %id, %err, "reconnect: driver teardown failed");
+                }
+                needs_teardown = false;
+            }
+            match self.connect_inner(&id).await {
+                Ok(_) => break,
+                Err(err) => {
+                    tracing::warn!(cluster = %id, %err, "reconnect attempt failed");
+                    // Deleted or invalid configs will never connect: stop trying.
+                    if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::Storage | ErrorKind::InvalidConfig) {
+                        break;
+                    }
+                    if cancel.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let wait = reconnect_backoff(attempt);
+                    attempt += 1;
+                    tokio::time::sleep(wait).await;
+                }
+            }
+        }
+        // Drop our registry entry (if it is still ours) so a later failure can spawn
+        // a fresh supervisor from the top of the backoff table.
+        if let Ok(mut guard) = slot.supervisor.lock() {
+            if guard.as_ref().is_some_and(|sup| Arc::ptr_eq(&sup.cancel, &cancel)) {
+                guard.take();
+            }
+        }
     }
 
     /// Shutdown path: every live driver gets a chance to close cleanly.
