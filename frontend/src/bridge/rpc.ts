@@ -16,6 +16,8 @@ export interface RpcErrorBody {
   kind: string;
   message: string;
   retryable: boolean;
+  // T081b: the driver's one line of advice, when the kind has one.
+  hint?: string;
 }
 
 interface RpcOk<T> {
@@ -33,13 +35,21 @@ interface RpcFail {
 type RpcResponse<T> = RpcOk<T> | RpcFail;
 
 export class RpcError extends Error {
+  // T081b: kept apart from `message` so a caller that wants the driver's text and
+  // the advice as two elements can still get them separately.
+  readonly hint?: string;
+
   constructor(
     readonly kind: string,
     message: string,
     readonly retryable: boolean,
+    hint?: string,
   ) {
-    super(message);
+    // R79/R80: every catch site renders `e.message`, so the advice rides along in it
+    // (second line; plain `\n`, which pre-wrap text keeps and plain text folds).
+    super(hint ? `${message}\n${hint}` : message);
     this.name = 'RpcError';
+    this.hint = hint;
   }
 }
 
@@ -90,7 +100,12 @@ async function rpcInner<T>(cmd: string, payload?: unknown): Promise<T> {
     return body.data;
   }
   if (body.ok === false) {
-    throw new RpcError(body.error.kind, body.error.message, body.error.retryable);
+    throw new RpcError(
+      body.error.kind,
+      body.error.message,
+      body.error.retryable,
+      body.error.hint,
+    );
   }
   throw new RpcError('protocol', 'malformed rpc envelope (missing ok)', false);
 }

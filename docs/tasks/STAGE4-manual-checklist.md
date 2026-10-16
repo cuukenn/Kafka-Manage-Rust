@@ -40,6 +40,7 @@
 20. **T050c**：四个弹窗 Esc 均可关（集群/topic/config/重置位点）。
 21. **全局**：操作全程无 devtools 未捕获异常；日志面板无 error 行（除故意注入的失败）。
 22. **T080**：启动应用 → 日志面板出现来源为 `rust` 的行（例如 `glue event pump online`），级别徽标按 tracing 级别着色（info/warn/error）；`Assembly` 构建期的两行按 R73 只进 stderr；清空后新日志继续追加。
+23. **T081b**：故意触发一次失败（未连接时刷新 topic 列表 / 输入不存在的 topic），错误文案**第二行**出现 T081 的行动建议（如 `Check bootstrap servers and network reachability.`）；`InvalidConfig` 与 `Cancelled` 两类按 R76 只有一行；`rpc.ts` 记进日志面板的 `rpc failed` 行同样带建议。
 
 ## 记录方式
 
