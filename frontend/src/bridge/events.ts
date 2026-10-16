@@ -21,8 +21,18 @@ type Handler = (e: BridgeEvent) => void;
 
 const handlers = new Map<string, Set<Handler>>();
 
+// T049b: wildcard subscribers see every event (log panel summaries).
+const allHandlers = new Set<Handler>();
+
 function dispatchBatch(batch: BridgeEvent[]): void {
   for (const e of batch) {
+    for (const h of allHandlers) {
+      try {
+        h(e);
+      } catch (err) {
+        console.error('[bridge] onAll handler error for', e.event, err);
+      }
+    }
     const set = handlers.get(e.event);
     if (!set) continue;
     for (const h of set) {
@@ -45,6 +55,12 @@ export function on(event: string, handler: Handler): () => void {
   set.add(handler);
   const bucket = set;
   return () => bucket.delete(handler);
+}
+
+/** T049b: subscribe to every pushed event; returns an unsubscribe function. */
+export function onAll(handler: Handler): () => void {
+  allHandlers.add(handler);
+  return () => allHandlers.delete(handler);
 }
 
 // Drain batches queued by the inline index.html hook, then take over the hook.

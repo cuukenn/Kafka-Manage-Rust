@@ -6,6 +6,7 @@ import { computed } from 'vue';
 import ClustersView from '../views/ClustersView.vue';
 import ConsumeView from '../views/ConsumeView.vue';
 import GroupsView from '../views/GroupsView.vue';
+import LogView from '../views/LogView.vue';
 import ProduceView from '../views/ProduceView.vue';
 import TopicsView from '../views/TopicsView.vue';
 import Toast from '../components/Toast.vue';
@@ -118,12 +119,8 @@ const badgeText = computed(() => {
         <ProduceView v-else-if="ui.currentView === 'produce'" />
         <ConsumeView v-else-if="ui.currentView === 'consume'" />
         <GroupsView v-else-if="ui.currentView === 'groups'" />
-        <section v-else>
-          <h2 class="mb-2 text-lg font-semibold">日志</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            日志页将在 T049 落地；当前外壳仅占位。
-          </p>
-        </section>
+        <!-- T049b: log panel (ring buffer fed by event/RPC summaries) -->
+        <LogView v-else-if="ui.currentView === 'logs'" />
       </main>
     </div>
 

@@ -4,6 +4,7 @@
 // absolute app:// fetches. Envelope: request {id,cmd,payload}; response
 // {id,ok,data} | {id,ok:false,error:{kind,message,retryable}}.
 import { reactive } from 'vue';
+import { record } from '../store/logs';
 
 export interface RpcRequest {
   id: string;
@@ -49,10 +50,21 @@ function nextId(): string {
 }
 
 // T049a: in-flight RPC count (reactive); Shell topbar spinner shows when > 0.
+// T049b: each call also records a {cmd, ok, kind?} summary line in the log ring.
 export const pending = reactive({ count: 0 });
 export async function rpc<T = unknown>(cmd: string, payload?: unknown): Promise<T> {
   pending.count += 1;
-  try { return await rpcInner<T>(cmd, payload); } finally { pending.count -= 1; }
+  try {
+    const data = await rpcInner<T>(cmd, payload);
+    record('info', 'rpc', `${cmd} ok`);
+    return data;
+  } catch (e) {
+    const kind = e instanceof RpcError ? ` (${e.kind})` : '';
+    record('error', 'rpc', `${cmd} failed${kind}: ${String((e as Error)?.message ?? e)}`);
+    throw e;
+  } finally {
+    pending.count -= 1;
+  }
 }
 async function rpcInner<T>(cmd: string, payload?: unknown): Promise<T> {
   let res: Response;
