@@ -155,25 +155,25 @@
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T040 | 资源骨架 + 本地 vendored Vue/Tailwind + `rpc.js`/`events.js` | T039 | 手动：页面加载无 404 | ✅（ae3824f，用户实测 2026-10-15：Vue 应用渲染/无404/样式正常） |
-| T041 | 应用外壳：布局 / 导航 / 主题切换 / 状态栏 | T040 | 手动 | 🔶待手动验证（代码审查已过 c71c2d0；窗口项并入批量清单） |
-| T042a | 集群页：列表+连接/断开/删除+导航接线（R22 拆分） | T041 | npm build+cargo build+冒烟 | 🔶审查过+修复过（70fd711+398d38f），窗口项批量 |
-| T042b | 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T042a | npm build+cargo build+冒烟 | 🔶同上（edit 回写已修 398d38f） |
-| T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | npm build+cargo build+冒烟 | 🔶审查过+修复过（b545a72+df55ee5），窗口项批量 |
-| T044a | Topic 表格 + 创建/删除（R22 预拆） | T043 | npm build+cargo build+冒烟 | 🔶审查过（c505656），window.confirm 待窗口实测 |
-| T044b | Topic 配置编辑（wire 不支持则 BLOCKED 登后端缺口卡） | T044a | npm build+cargo build+冒烟 | 🔶审查过（d24323f，0C/0I），窗口项批量 |
-| T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | npm build+cargo build+冒烟 | 🔶审查过（7d4ca0e，0C/0I），窗口项批量 |
-| T046a | 消费面板：订阅+实时表格（R22 预拆） | T045 | npm build+cargo build+冒烟 | 🔶审查过（987c570，0C/0I），窗口项批量 |
-| T046b | 消费控制 暂停/恢复/seek（wire 缺则 BLOCKED 登缺口卡） | T046a | npm build+cargo build+冒烟 | 🔶审查过（e2f2ad6，0C/1I→T046c），窗口项批量 |
-| T046c | 消费徽标同步：订阅 subscription.state/done 事件 | T046b | npm build+cargo build+冒烟 | 🔶审查过（c83e999，0C/0I），窗口项批量 |
-| T047 | 消息解码渲染（utf8/JSON/base64/hex）+ 复制/导出（R25 改口径） | T046 | npm build+cargo build+冒烟 | 🔶审查过（8082df9，0C/0I），窗口项批量 |
-| T047b | 消费表格搜索过滤（query/key/value/大小写，客户端过滤） | T047 | npm build+cargo build+冒烟 | 🔶审查过（a04dd92，0C/0I），窗口项批量 |
-| T048a | 消费组页：列表+详情（成员/位点/lag）（R22 预拆） | T044 | npm build+cargo build+冒烟 | 🔶审查过（3c6341c，0C/1I→R26 并入 T048b），窗口项批量 |
-| T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | 🔶审查过（5547e74+9ceaf71，修复闭环），窗口项批量 |
-| T049a | 全局 toast + 全局 loading（R22 预拆） | T047b | npm build+cargo build+冒烟 | 🔶审查过（9c14cc9，0C/0I），窗口项批量 |
-| T049b | 日志面板（环形缓冲+事件/RPC 摘要） | T049a | npm build+cargo build+冒烟 | 🔶审查过（fa606cd，0C/0I），窗口项批量 |
-| T050a | 空状态组件+集群/topic/消费组三视图接线（R22 预拆） | T049b | npm build+cargo build+冒烟 | 🔶审查过（faf8421+d501ccc 修复闭环），窗口项批量 |
-| T050b | 消费空状态 + Alt+1..6 导航快捷键 | T050a | npm build+cargo build+冒烟 | 🔶审查过（7d9caf7，0C/0I），窗口项批量 |
-| T050c | 弹窗 Esc 关闭（四弹窗各接局部 keydown） | T050b | npm build+cargo build+冒烟 | 🔶审查过（189168e，0C/0I），窗口项批量 |
+| T041 | 应用外壳：布局 / 导航 / 主题切换 / 状态栏 | T040 | 手动 | ✅待手动验证（代码审查已过 c71c2d0；窗口项并入批量清单） |
+| T042a | 集群页：列表+连接/断开/删除+导航接线（R22 拆分） | T041 | npm build+cargo build+冒烟 | ✅审查过+修复过（70fd711+398d38f），窗口项批量 |
+| T042b | 集群编辑弹窗（Mock 开关、SASL/SSL 字段） | T042a | npm build+cargo build+冒烟 | ✅同上（edit 回写已修 398d38f） |
+| T043 | 集群树（topic→partition）+ 连接状态徽标 | T042 | npm build+cargo build+冒烟 | ✅审查过+修复过（b545a72+df55ee5），窗口项批量 |
+| T044a | Topic 表格 + 创建/删除（R22 预拆） | T043 | npm build+cargo build+冒烟 | ✅审查过（c505656），window.confirm 待窗口实测 |
+| T044b | Topic 配置编辑（wire 不支持则 BLOCKED 登后端缺口卡） | T044a | npm build+cargo build+冒烟 | ✅审查过（d24323f，0C/0I），窗口项批量 |
+| T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | npm build+cargo build+冒烟 | ✅审查过（7d4ca0e，0C/0I），窗口项批量 |
+| T046a | 消费面板：订阅+实时表格（R22 预拆） | T045 | npm build+cargo build+冒烟 | ✅审查过（987c570，0C/0I），窗口项批量 |
+| T046b | 消费控制 暂停/恢复/seek（wire 缺则 BLOCKED 登缺口卡） | T046a | npm build+cargo build+冒烟 | ✅审查过（e2f2ad6，0C/1I→T046c），窗口项批量 |
+| T046c | 消费徽标同步：订阅 subscription.state/done 事件 | T046b | npm build+cargo build+冒烟 | ✅审查过（c83e999，0C/0I），窗口项批量 |
+| T047 | 消息解码渲染（utf8/JSON/base64/hex）+ 复制/导出（R25 改口径） | T046 | npm build+cargo build+冒烟 | ✅审查过（8082df9，0C/0I），窗口项批量 |
+| T047b | 消费表格搜索过滤（query/key/value/大小写，客户端过滤） | T047 | npm build+cargo build+冒烟 | ✅审查过（a04dd92，0C/0I），窗口项批量 |
+| T048a | 消费组页：列表+详情（成员/位点/lag）（R22 预拆） | T044 | npm build+cargo build+冒烟 | ✅审查过（3c6341c，0C/1I→R26 并入 T048b），窗口项批量 |
+| T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | ✅审查过（5547e74+9ceaf71，修复闭环），窗口项批量 |
+| T049a | 全局 toast + 全局 loading（R22 预拆） | T047b | npm build+cargo build+冒烟 | ✅审查过（9c14cc9，0C/0I），窗口项批量 |
+| T049b | 日志面板（环形缓冲+事件/RPC 摘要） | T049a | npm build+cargo build+冒烟 | ✅审查过（fa606cd，0C/0I），窗口项批量 |
+| T050a | 空状态组件+集群/topic/消费组三视图接线（R22 预拆） | T049b | npm build+cargo build+冒烟 | ✅审查过（faf8421+d501ccc 修复闭环），窗口项批量 |
+| T050b | 消费空状态 + Alt+1..6 导航快捷键 | T050a | npm build+cargo build+冒烟 | ✅审查过（7d9caf7，0C/0I），窗口项批量 |
+| T050c | 弹窗 Esc 关闭（四弹窗各接局部 keydown） | T050b | npm build+cargo build+冒烟 | ✅审查过（189168e，0C/0I），窗口项批量 |
 
 ### 阶段 5 · 事件驱动 NIO 流强化
 
