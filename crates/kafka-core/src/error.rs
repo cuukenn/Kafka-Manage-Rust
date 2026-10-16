@@ -46,6 +46,30 @@ impl ErrorKind {
         }
     }
 
+    /// Every variant, in declaration order.
+    ///
+    /// Tables keyed by error kind (the UI hint in
+    /// [`protocol`](crate::protocol), for one) iterate this so a variant cannot be
+    /// added without a decision about it: this list stops compiling first, and the
+    /// `hint_for` match stops compiling next.
+    pub const ALL: [Self; 15] = [
+        Self::NotConnected,
+        Self::Connection,
+        Self::Timeout,
+        Self::Auth,
+        Self::Ssl,
+        Self::NotFound,
+        Self::AlreadyExists,
+        Self::InvalidConfig,
+        Self::OffsetOutOfRange,
+        Self::Unsupported,
+        Self::Group,
+        Self::Broker,
+        Self::Storage,
+        Self::Cancelled,
+        Self::Internal,
+    ];
+
     /// Whether an operation that failed with this code may be retried unchanged.
     ///
     /// The coarse, wire-facing half of the classification: `ErrorDto` carries only an

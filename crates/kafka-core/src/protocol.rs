@@ -98,17 +98,39 @@ impl ErrorDto {
     }
 }
 
+/// The one line of advice the UI shows under an error message (T081).
+///
+/// Deliberately an exhaustive match with no `_` arm: every `ErrorKind` carries a
+/// decision here, so a new variant cannot ship without one. `None` means the
+/// message alone is the whole story — see the two arms that say so.
 fn hint_for(kind: ErrorKind) -> Option<String> {
-    match kind {
-        ErrorKind::NotConnected => Some("Connect to the cluster first, or switch the cluster to mock mode.".into()),
-        ErrorKind::Connection => Some("Check bootstrap servers and network reachability.".into()),
-        ErrorKind::Timeout => Some("Increase the request timeout in cluster settings.".into()),
-        ErrorKind::Auth => Some("Check SASL mechanism, username and password.".into()),
-        ErrorKind::Ssl => Some("Check CA / certificate paths and hostname verification.".into()),
-        ErrorKind::OffsetOutOfRange => Some("Pick earliest or latest, or a timestamp inside the retention window.".into()),
-        ErrorKind::Unsupported => Some("This operation is not available in mock mode; use a real cluster.".into()),
-        _ => None,
-    }
+    let text = match kind {
+        ErrorKind::NotConnected => "Connect to the cluster first, or switch the cluster to mock mode.",
+        ErrorKind::Connection => "Check bootstrap servers and network reachability.",
+        ErrorKind::Timeout => "Increase the request timeout in cluster settings.",
+        ErrorKind::Auth => "Check SASL mechanism, username and password.",
+        ErrorKind::Ssl => "Check CA / certificate paths and hostname verification.",
+        ErrorKind::NotFound => "Refresh the list; the topic, partition or group may have been removed.",
+        ErrorKind::AlreadyExists => "Pick another name, or open the existing topic.",
+        // R76: the driver builds this message itself and names the offending
+        // field plus the reason, so a second sentence would only restate it.
+        ErrorKind::InvalidConfig => return None,
+        ErrorKind::OffsetOutOfRange => {
+            "Pick earliest or latest, or a timestamp inside the retention window."
+        }
+        ErrorKind::Unsupported => "This operation is not available in mock mode; use a real cluster.",
+        ErrorKind::Group => {
+            "The group may be rebalancing or gone; retry, then refresh the group list."
+        }
+        ErrorKind::Broker => "The broker rejected the request; check the broker log for this code.",
+        ErrorKind::Storage => {
+            "The local database could not be read or written; check disk space and file permissions."
+        }
+        // R76: the user asked for the cancellation; nothing to advise.
+        ErrorKind::Cancelled => return None,
+        ErrorKind::Internal => "This looks like a bug; check the log panel and report it.",
+    };
+    Some(text.into())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -252,5 +274,89 @@ mod tests {
         assert_eq!(json["ok"], true);
         assert!(json.get("error").is_none());
         assert!(json.get("elapsedMs").is_none());
+    }
+
+    /// T081: every kind has a decided hint, and the undecided-looking ones are named.
+    #[test]
+    fn every_error_kind_has_a_deliberate_hint() {
+        for kind in ErrorKind::ALL {
+            let hinted = !matches!(kind, ErrorKind::InvalidConfig | ErrorKind::Cancelled);
+            let hint = ErrorDto::new(kind, "boom").hint;
+            assert_eq!(hint.is_some(), hinted, "{kind} hint coverage changed");
+            if let Some(text) = hint {
+                assert!(!text.trim().is_empty(), "{kind} hint must not be blank");
+            }
+        }
+    }
+
+    /// T081: a hint answers for exactly one kind — copy-paste reuse would mean one of
+    /// them is answering the wrong question.
+    #[test]
+    fn hints_are_never_reused_between_kinds() {
+        let mut seen: Vec<(ErrorKind, String)> = Vec::new();
+        for kind in ErrorKind::ALL {
+            let Some(hint) = ErrorDto::new(kind, "boom").hint else {
+                continue;
+            };
+            if let Some((owner, _)) = seen.iter().find(|(_, text)| *text == hint) {
+                panic!("{kind} reuses the hint of {owner}: {hint}");
+            }
+            seen.push((kind, hint));
+        }
+        assert_eq!(seen.len(), ErrorKind::ALL.len() - 2, "13 kinds carry advice");
+    }
+
+    /// T081: hint must not depend on which constructor produced the DTO.
+    #[test]
+    fn both_error_dto_constructors_agree_on_the_hint() {
+        for kind in ErrorKind::ALL {
+            let Some(error) = driver_error_of(kind) else {
+                // `Storage` is only reachable through `StorageError`, which is not a
+                // `DriverError`, so `from_driver` can never carry it.
+                assert_eq!(kind, ErrorKind::Storage, "{kind} needs a DriverError to compare");
+                continue;
+            };
+            assert_eq!(error.kind(), kind, "the sample for {kind} drifted");
+            assert_eq!(
+                ErrorDto::from_driver(&error).hint,
+                ErrorDto::new(kind, "boom").hint,
+                "{kind} hints differ between the two constructors"
+            );
+        }
+    }
+
+    /// One representative `DriverError` per kind, for the agreement test above.
+    fn driver_error_of(kind: ErrorKind) -> Option<DriverError> {
+        let error = match kind {
+            ErrorKind::NotConnected => DriverError::NotConnected("c1".into()),
+            ErrorKind::Connection => DriverError::Connection {
+                server: "localhost:9092".into(),
+                message: "refused".into(),
+            },
+            ErrorKind::Timeout => DriverError::timeout("connect", 1),
+            ErrorKind::Auth => DriverError::Auth("bad credentials".into()),
+            ErrorKind::Ssl => DriverError::Ssl("handshake failed".into()),
+            ErrorKind::NotFound => DriverError::TopicNotFound("t1".into()),
+            ErrorKind::AlreadyExists => DriverError::TopicAlreadyExists("t1".into()),
+            ErrorKind::InvalidConfig => DriverError::invalid("topic", "must not be empty"),
+            ErrorKind::OffsetOutOfRange => DriverError::OffsetOutOfRange {
+                topic: "t1".into(),
+                partition: 0,
+                requested: 99,
+                low: 0,
+                high: 3,
+            },
+            ErrorKind::Unsupported => DriverError::unsupported("not here yet"),
+            ErrorKind::Group => DriverError::Rebalance("rebalancing".into()),
+            ErrorKind::Broker => DriverError::Broker {
+                code: 3,
+                name: "UnknownTopicOrPartition".into(),
+                message: "unknown".into(),
+            },
+            ErrorKind::Storage => return None,
+            ErrorKind::Cancelled => DriverError::Cancelled,
+            ErrorKind::Internal => DriverError::other("boom"),
+        };
+        Some(error)
     }
 }
