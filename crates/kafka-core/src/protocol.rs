@@ -42,6 +42,9 @@ pub mod cmd {
     pub const MOCK_RESET: &str = "mock.reset";
     pub const MOCK_SEED: &str = "mock.seed";
     pub const MOCK_FAULTS: &str = "mock.faults";
+
+    /// T082b: drop an in-flight request by envelope id (`payload: { id }`).
+    pub const REQUEST_CANCEL: &str = "request.cancel";
 }
 
 /// Event names pushed from Rust to the WebView (never answered).
