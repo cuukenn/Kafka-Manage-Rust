@@ -25,7 +25,11 @@ pub fn client_config(cfg: &ClusterConfig) -> Result<ClientConfig, DriverError> {
         // timeout the user configured, not librdkafka's patience.
         .set("socket.connection.setup.timeout.ms", cfg.timeouts.connect_ms.to_string())
         .set("request.timeout.ms", cfg.timeouts.request_ms.to_string())
-        .set("security.protocol", cfg.security_protocol.as_str());
+        .set("security.protocol", cfg.security_protocol.as_str())
+        // A producer-typed client (and `AdminClient` is one) defaults this to
+        // `true`, which would let any metadata probe for a topic that does not
+        // exist create it as a side effect (R42).
+        .set("allow.auto.create.topics", "false");
 
     for (key, value) in &cfg.extra {
         conf.set(key, value);

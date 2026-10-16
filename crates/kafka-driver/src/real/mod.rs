@@ -4,14 +4,15 @@
 //! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). T071a adds
 //! `list_topics` and the per-operation session plumbing, T071b adds
 //! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
-//! config writer (see [`admin`]). The remaining domain methods answer `Unsupported`
-//! until T073–T076 fill them in, so each of those cards is gated by the same
-//! `cargo check --features real`.
+//! config writer (see [`admin`]), and T073 adds batch production (see [`producer`]).
+//! The remaining domain methods answer `Unsupported` until T074–T076 fill them in,
+//! so each of those cards is gated by the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
 mod admin;
 mod config;
+mod producer;
 mod topic;
 
 use std::sync::Arc;
@@ -41,19 +42,22 @@ pub use config::client_config;
 use crate::driver::{DriverCapabilities, DriverKind, KafkaDriver};
 
 /// A live connection: the admin client (kept alive so its background threads run),
-/// the config it was opened with, and the metadata snapshot from `connect`.
+/// the producer every batch is enqueued into, the config it was opened with, and
+/// the metadata snapshot from `connect`.
 struct Session {
     admin: Arc<AdminClient<DefaultClientContext>>,
+    producer: producer::Producer,
     cfg: ClusterConfig,
     info: ClusterInfo,
 }
 
-/// What a domain operation needs from a live session: the client to call, the
-/// config whose timeouts bound it, and the broker count `connect` saw (used by the
-/// create-topic validation so it costs no extra metadata round trip; R38). Taken
-/// once per operation so no method holds the session lock across an await.
+/// What a domain operation needs from a live session: the clients to call, the
+/// config whose timeouts bound them, and the broker count `connect` saw (used by
+/// the create-topic validation so it costs no extra metadata round trip; R38).
+/// Taken once per operation so no method holds the session lock across an await.
 pub(super) struct Live {
     pub(super) admin: Arc<AdminClient<DefaultClientContext>>,
+    pub(super) producer: producer::Producer,
     pub(super) cfg: ClusterConfig,
     pub(super) brokers: usize,
 }
@@ -82,6 +86,7 @@ impl RealKafkaDriver {
         match self.session.read().await.as_ref() {
             Some(session) => Ok(Live {
                 admin: session.admin.clone(),
+                producer: session.producer.clone(),
                 cfg: session.cfg.clone(),
                 brokers: session.info.brokers.len(),
             }),
@@ -150,15 +155,23 @@ impl KafkaDriver for RealKafkaDriver {
         let admin = conf.create::<AdminClient<DefaultClientContext>>().map_err(|e| {
             DriverError::Connection { server: cfg.bootstrap_joined(), message: e.to_string() }
         })?;
+        let producer =
+            producer::producer_config(cfg)?.create::<producer::Producer>().map_err(|e| {
+                DriverError::Connection { server: cfg.bootstrap_joined(), message: e.to_string() }
+            })?;
 
-        let probe = Live { admin: Arc::new(admin), cfg: cfg.clone(), brokers: 0 };
+        let probe = Live { admin: Arc::new(admin), producer, cfg: cfg.clone(), brokers: 0 };
         let started = Instant::now();
         let metadata = fetch_metadata(&probe, None).await?;
 
         let info = cluster_info_from(&metadata, cfg, started.elapsed());
         *self.name.write().await = cfg.name.clone();
-        *self.session.write().await =
-            Some(Session { admin: probe.admin, cfg: cfg.clone(), info: info.clone() });
+        *self.session.write().await = Some(Session {
+            admin: probe.admin,
+            producer: probe.producer,
+            cfg: cfg.clone(),
+            info: info.clone(),
+        });
 
         tracing::info!(cluster = %cfg.name, brokers = info.brokers.len(), "real cluster connected");
         Ok(info)
@@ -168,9 +181,10 @@ impl KafkaDriver for RealKafkaDriver {
         let session = self.session.write().await.take();
         if let Some(session) = session {
             let admin = session.admin;
+            let producer = session.producer;
             // librdkafka tears down internal threads on drop, which blocks: hand it
             // to the blocking pool rather than stalling the runtime.
-            let _ = tokio::task::spawn_blocking(move || drop(admin)).await;
+            let _ = tokio::task::spawn_blocking(move || drop((admin, producer))).await;
             tracing::info!("real cluster disconnected");
         }
         Ok(())
@@ -218,8 +232,8 @@ impl KafkaDriver for RealKafkaDriver {
         Err(self.require_unsupported("list_offsets lands in T074"))
     }
 
-    async fn produce(&self, _req: ProduceReq) -> Result<Vec<ProduceResult>, DriverError> {
-        Err(self.require_unsupported("produce lands in T073"))
+    async fn produce(&self, req: ProduceReq) -> Result<Vec<ProduceResult>, DriverError> {
+        self.real_produce(req).await
     }
 
     async fn subscribe(&self, _req: SubscribeReq) -> Result<MessageStream, DriverError> {
