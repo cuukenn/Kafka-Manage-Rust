@@ -40,19 +40,27 @@ function specOf(r: (typeof rows)[number]): Record<string, unknown> {
   return r.mode === 'toOffset' ? { type: 'toOffset', value: Number(r.value) } : { type: r.mode };
 }
 
-async function submit(): Promise<void> {
-  if (s.confirming) { await execute(); return; }
+// Shared by submit() and execute(): inputs stay editable while the amber confirm
+// bar is armed, so execute() re-validates before any destructive request.
+function validateSelected(): boolean {
   const sel = rows.filter((r) => r.enabled);
-  if (sel.length === 0) { s.error = '请至少选择一个分区。'; return; }
+  if (sel.length === 0) { s.error = '请至少选择一个分区。'; return false; }
   if (sel.some((r) => r.mode === 'toOffset' && !/^\d+$/.test(r.value.trim()))) {
     s.error = '「指定 Offset」必须是非负整数。';
-    return;
+    return false;
   }
+  return true;
+}
+
+async function submit(): Promise<void> {
+  if (s.confirming) { await execute(); return; }
+  if (!validateSelected()) return;
   s.error = null;
   s.confirming = true; // in-modal second-confirm bar, not window.confirm
 }
 
 async function execute(): Promise<void> {
+  if (!validateSelected()) return; // re-validate: inputs stay editable while the confirm bar is armed
   const sel = rows.filter((r) => r.enabled);
   const bySpec = new Map<string, { spec: Record<string, unknown>; parts: TopicPartition[] }>();
   for (const r of sel) {
@@ -64,6 +72,7 @@ async function execute(): Promise<void> {
   s.confirming = false;
   s.busy = true;
   s.error = null;
+  let appliedGroups = 0; // spec groups that applied successfully before any failure
   try {
     for (const g of bySpec.values()) {
       const res = await rpc<ResetResult>('group.resetOffsets', {
@@ -74,11 +83,17 @@ async function execute(): Promise<void> {
         spec: g.spec,
         dryRun: false,
       });
-      if (res?.error) { s.error = `重置失败：${res.error}`; return; }
+      if (res?.error) {
+        s.error = `重置失败：${res.error}`;
+        if (appliedGroups > 0) emit('updated'); // partial write is real — refresh table, keep error bar
+        return;
+      }
+      appliedGroups++;
     }
     emit('updated');
   } catch (e) {
     s.error = message(e);
+    if (appliedGroups > 0) emit('updated'); // partial write before the throw — refresh table
   } finally {
     s.busy = false;
   }
