@@ -38,6 +38,11 @@ pub struct SubscriptionInfo {
     pub partitions: Vec<u32>,
     pub state: SubscriptionStatus,
     pub delivered: u64,
+    /// Messages this subscription forwarded onto the bus while it had zero live
+    /// receivers (T060/R27): the publish reached nobody. Slow-receiver
+    /// drop-oldest losses are counted globally by `EventBus::lag_count` and
+    /// cannot be attributed per subscription without a bus redesign.
+    pub dropped: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -56,6 +61,8 @@ struct SubHandle {
     controls: StreamControls,
     state: Arc<Mutex<SubState>>,
     delivered: Arc<AtomicU64>,
+    /// Forwards whose bus publish returned 0: no live receiver existed (T060/R27).
+    dropped: Arc<AtomicU64>,
     /// Flipped exactly once, by whoever publishes `subscription.done`.
     finished: Arc<AtomicBool>,
     task: JoinHandle<()>,
@@ -118,6 +125,7 @@ impl ConsumeService {
             reason: None,
         }));
         let delivered = Arc::new(AtomicU64::new(0));
+        let dropped = Arc::new(AtomicU64::new(0));
         let finished = Arc::new(AtomicBool::new(false));
 
         let task = {
@@ -125,6 +133,7 @@ impl ConsumeService {
             let task_id = id.clone();
             let state = Arc::clone(&state);
             let delivered = Arc::clone(&delivered);
+            let dropped = Arc::clone(&dropped);
             let finished = Arc::clone(&finished);
             let mut messages = stream.into_stream();
 
@@ -134,10 +143,13 @@ impl ConsumeService {
                     match item {
                         Ok(message) => {
                             delivered.fetch_add(1, Ordering::Relaxed);
-                            bus.publish(AppEvent::MessageReceived {
+                            if bus.publish(AppEvent::MessageReceived {
                                 subscription_id: task_id.clone(),
                                 message,
-                            });
+                            }) == 0
+                            {
+                                dropped.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                         Err(err) => {
                             end_error = Some(ErrorDto::from_driver(&err));
@@ -171,6 +183,7 @@ impl ConsumeService {
             partitions: req.partitions.clone(),
             state: SubscriptionStatus::Running,
             delivered: 0,
+            dropped: 0,
             reason: None,
         };
 
@@ -183,6 +196,7 @@ impl ConsumeService {
                 controls,
                 state,
                 delivered,
+                dropped,
                 finished,
                 task,
             },
@@ -269,6 +283,7 @@ impl ConsumeService {
                 partitions: handle.partitions.clone(),
                 state: state_of(&handle.state),
                 delivered: handle.delivered.load(Ordering::Relaxed),
+                dropped: handle.dropped.load(Ordering::Relaxed),
                 reason: handle.state.lock().ok().and_then(|s| s.reason.clone()),
             })
             .collect::<Vec<_>>();
