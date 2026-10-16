@@ -17,10 +17,12 @@ import { rpc } from '../bridge/rpc';
 import { on, type BridgeEvent } from '../bridge/events';
 import { clusters } from '../store/clusters';
 import { ui } from '../store/ui';
+import MessageCell from '../components/MessageCell.vue';
+import { copyText, downloadJson, renderBytes, type RenderMode } from '../utils/render';
 import type { TopicRow } from '../store/tree';
 
 type StartMode = 'earliest' | 'latest' | 'offset';
-interface MessageRow { seq: number; partition: number; offset: number; key: string; value: string; isUtf8: boolean; size: number; timestamp: number }
+interface MessageRow { seq: number; partition: number; offset: number; keyBytes: number[] | null; valueBytes: number[]; timestamp: number }
 interface MessageEventDto { topic: string; partition: number; offset: number; key: number[] | null; value: number[]; timestamp: number }
 
 const CONNECTED = new Set(['connected', 'degraded']);
@@ -63,29 +65,40 @@ const follow = ref(true);
 const rows = ref<MessageRow[]>([]);
 let seq = 0;
 
-function decodeBytes(bytes: number[] | null): { text: string; isUtf8: boolean; size: number } {
-  if (!bytes) return { text: '', isUtf8: true, size: 0 };
-  const arr = Uint8Array.from(bytes);
-  try {
-    return { text: new TextDecoder('utf-8', { fatal: true }).decode(arr), isUtf8: true, size: arr.length };
-  } catch {
-    let bin = '';
-    for (let i = 0; i < arr.length; i += 0x8000) bin += String.fromCharCode(...arr.subarray(i, i + 0x8000));
-    const b64 = btoa(bin);
-    return { text: `base64(${b64.length > 48 ? `${b64.slice(0, 48)}…` : b64})`, isUtf8: false, size: arr.length };
-  }
+// ---- T047: render mode + copy + export ----
+// One global decode-mode selector (component state). Key column always renders auto;
+// value column follows the selector. Copy sends the value as current-mode text.
+const renderMode = ref<RenderMode>('auto');
+const copySeq = ref<number | null>(null);
+const copyOk = ref(false);
+
+async function copyRow(r: MessageRow): Promise<void> {
+  const ok = await copyText(renderBytes(r.valueBytes, renderMode.value).text);
+  copySeq.value = r.seq;
+  copyOk.value = ok;
+  window.setTimeout(() => { if (copySeq.value === r.seq) copySeq.value = null; }, 1500);
+}
+
+function exportRows(): void {
+  if (rows.value.length === 0) return;
+  const safe = topicName.value.replace(/[^\w.-]+/g, '_') || 'topic';
+  const stamp = new Date().toISOString().replace(/[:T]/g, '').slice(0, 14);
+  downloadJson(`${safe}-${stamp}.json`, rows.value.slice(0, MAX_ROWS).map((r) => ({
+    partition: r.partition,
+    offset: r.offset,
+    key: renderBytes(r.keyBytes, 'auto').text,
+    value: renderBytes(r.valueBytes, renderMode.value).text,
+    timestamp: r.timestamp,
+  })));
 }
 
 function onMessage(e: BridgeEvent): void {
   const p = e.payload as { subscriptionId?: string; message?: MessageEventDto } | undefined;
   if (!p || !p.message || p.subscriptionId !== subId.value || subDone.value) return; // done → stop appending
   const m = p.message;
-  const key = decodeBytes(m.key ?? null);
-  const val = decodeBytes(m.value ?? []);
   rows.value.unshift({
     seq: ++seq, partition: m.partition ?? 0, offset: m.offset ?? 0,
-    key: key.text || (m.key ? '(binary)' : ''),
-    value: val.text, isUtf8: val.isUtf8, size: val.size, timestamp: m.timestamp ?? 0,
+    keyBytes: m.key ?? null, valueBytes: m.value ?? [], timestamp: m.timestamp ?? 0,
   });
   if (rows.value.length > MAX_ROWS) rows.value.length = MAX_ROWS; // newest-on-top, hard cap
 }
@@ -259,21 +272,32 @@ function fmtTs(ts: number): string {
         <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || subDone || seekOffset === ''" @click="seek">确认</button>
       </div>
       <p v-if="subError" class="mb-2 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">{{ subError }}</p>
-      <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">消息（最新在上，上限 {{ MAX_ROWS }}）</p>
+      <div class="mb-1 flex flex-wrap items-center gap-2">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">消息（最新在上，上限 {{ MAX_ROWS }}）</p>
+        <label :class="`${LBL} ml-2`">解码</label>
+        <select v-model="renderMode" :class="INP">
+          <option value="auto">自动</option><option value="json">JSON</option><option value="base64">Base64</option><option value="hex">Hex</option>
+        </select>
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="rows.length === 0" @click="exportRows">导出 JSON</button>
+        <span v-if="copySeq !== null" class="text-xs font-medium" :class="copyOk ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'">{{ copyOk ? '已复制' : '复制失败' }}</span>
+      </div>
       <table class="w-full border-collapse text-xs">
         <thead>
           <tr class="border-b border-slate-300 text-left text-slate-500 dark:border-slate-600 dark:text-slate-400">
-            <th class="px-2 py-1">Partition</th><th class="px-2 py-1">Offset</th><th class="px-2 py-1">Key</th><th class="px-2 py-1">Value</th><th class="px-2 py-1">Timestamp</th>
+            <th class="px-2 py-1">Partition</th><th class="px-2 py-1">Offset</th><th class="px-2 py-1">Key</th><th class="px-2 py-1">Value</th><th class="px-2 py-1">Timestamp</th><th class="px-2 py-1">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="rows.length === 0"><td colspan="5" class="px-2 py-3 text-slate-400 dark:text-slate-500">暂无消息</td></tr>
+          <tr v-if="rows.length === 0"><td colspan="6" class="px-2 py-3 text-slate-400 dark:text-slate-500">暂无消息</td></tr>
           <tr v-for="r in rows" :key="r.seq" class="border-b border-slate-200 align-top dark:border-slate-700">
             <td class="px-2 py-1 font-mono">{{ r.partition }}</td>
             <td class="px-2 py-1 font-mono">{{ r.offset }}</td>
-            <td class="max-w-40 truncate px-2 py-1 font-mono">{{ r.key || '—' }}</td>
-            <td class="max-w-md break-all px-2 py-1 font-mono" :class="r.isUtf8 ? '' : 'text-amber-600 dark:text-amber-400'">{{ r.value || '（空）' }}<span v-if="!r.isUtf8" class="text-slate-400"> · {{ r.size }}B</span></td>
+            <td class="max-w-40 px-2 py-1"><MessageCell :bytes="r.keyBytes" mode="auto" /></td>
+            <td class="max-w-md px-2 py-1"><MessageCell :bytes="r.valueBytes" :mode="renderMode" /></td>
             <td class="whitespace-nowrap px-2 py-1">{{ fmtTs(r.timestamp) }}</td>
+            <td class="whitespace-nowrap px-2 py-1">
+              <button type="button" class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" @click="copyRow(r)">复制</button>
+            </td>
           </tr>
         </tbody>
       </table>
