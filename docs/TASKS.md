@@ -70,6 +70,11 @@
   （core 5 + driver 11 + app 92）；`cargo clippy --workspace --all-targets -- -D warnings` → 零告警。
   `.gitignore` 补了 `.codegraph/` 与 `*.rmeta`（根目录两个探针残留文件只忽略、未删除）。
 - 仓库状态：**已有 1 条基线提交**（`chore: baseline (core + mock driver)`，88 个文件）。
+- ✅ **阶段 6 开工（2026-10-16，macOS arm64 新环境）**：本机为 macOS（rustc 1.99.1 / cargo 1.99.1），
+  另装 `cmake 4.4.4` + `pkg-config` + brew `openssl@3`（`PKG_CONFIG_PATH=/opt/homebrew/opt/openssl@3/lib/pkgconfig`）。
+  真实 Kafka 用 Docker Desktop：`scripts/kafka/docker-compose.yml`（KRaft 单节点，localhost:9092，
+  cluster `5L6g3nShT-eMCtK--X86sw`）。**T070 已 ✅**（real 模块骨架 + 连接生命周期，2 文件 248 行；
+  真集群实测 connect/cluster_info/disconnect 通过）。下一步 T071（real topic 只读）。
 
 ---
 
@@ -188,7 +193,7 @@
 
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
-| T070 | `real` 模块骨架 + `cargo check --features real` 通过 | T001 | `cargo check -p kafka-driver --features real` | ⏸ |
+| T070 | `real` 模块骨架 + 配置映射 + 连接生命周期 | T001 | `cargo check -p kafka-driver --features real` | ✅（248 行/2 文件；check+clippy 绿；Docker Kafka 实测 connect/cluster_info/disconnect；R30/R32） |
 | T071 | real：cluster_info / list / describe topics | T070 | 真集群手动清单 | ⏸ |
 | T072 | real：create / delete / update topic | T071 | 真集群手动清单 | ⏸ |
 | T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ⏸ |
