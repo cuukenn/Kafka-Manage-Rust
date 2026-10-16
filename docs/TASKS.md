@@ -180,7 +180,7 @@
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T060 | 消息节流/批量策略（速率 + 缓冲上限） | T037,T027 | `cargo test -p kafka-app --test consume_throttle` | ✅（65e8a4f；243 tests=239+4，clippy 零；审查 Approved 0C/0I/4m） |
-| T061 | 背压与丢弃策略（有界通道 + 溢出计数） | T060 | `--test consume_backpressure` | ⏸ |
+| T061 | 背压与丢弃策略（有界通道 + 溢出计数） | T060 | `--test consume_backpressure` | ✅（2282b2a；产品码 0 改动、仅 5 测试 +324 行；248 tests=243+5，clippy 零；审查 Approved 0C/0I/5m） |
 | T062 | 断线自动重连（指数退避 + 状态事件） | T024 | `--test reconnect` | ⏸ |
 | T063 | 资源回收：关闭订阅 / 释放驱动 / 优雅退出 | T027 | `--test teardown` | ⏸ |
 
