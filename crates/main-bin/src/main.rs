@@ -1,6 +1,7 @@
-//! Entry point (T038b): logging, local data directory, App/Router assembly,
-//! then the bridged shell window — RPC over `POST app://localhost/rpc` into the
-//! router, Rust events pushed in batches to `window.__bridgeEvents`.
+//! Entry point (T038b): logging (T080 also mirrors `tracing` onto the bus),
+//! local data directory, App/Router assembly, then the bridged shell window —
+//! RPC over `POST app://localhost/rpc` into the router, Rust events pushed in
+//! batches to `window.__bridgeEvents`.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -8,14 +9,10 @@ use std::time::Duration;
 use webview_bridge::shell::{DEV_DIR_ENV, PageSource, WindowOptions, run_window_with};
 
 mod glue;
+mod logging;
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    let logs = logging::install();
 
     let page = match std::env::var_os(DEV_DIR_ENV) {
         Some(dir) if !dir.is_empty() => PageSource::DevDir(PathBuf::from(dir)),
@@ -27,6 +24,9 @@ fn main() -> anyhow::Result<()> {
     // The App moves into the ready hook (the guard owns it); the runtime stays
     // owned here so the rpc closure's Handle stays valid for every request.
     let glue::Assembly { rt, app, .. } = assembly;
+    // T080: from here on the bus layer can publish, so anything logged below
+    // (including the window's own startup lines) shows up in the log panel.
+    logs.attach(app.bus().clone());
     run_window_with(
         WindowOptions {
             title: "rs-kafka-ui-client".to_owned(),

@@ -7,7 +7,8 @@ import { reactive } from 'vue';
 import { onAll, type BridgeEvent } from '../bridge/events';
 
 export type LogLevel = 'info' | 'warn' | 'error';
-export type LogSource = 'event' | 'rpc' | 'ui';
+// 'rust' is T080: `log.line` events carrying the backend's own tracing output.
+export type LogSource = 'event' | 'rpc' | 'rust' | 'ui';
 
 export interface LogEntry {
   ts: number;
@@ -64,6 +65,30 @@ function levelFor(e: BridgeEvent): LogLevel {
   return e.event.includes('error') ? 'error' : 'info';
 }
 
+// T080: `log.line` already is a log line — its payload carries the level, the
+// tracing target and the message, so it is rendered as-is instead of being
+// summarized like the other events.
+function recordLogLine(e: BridgeEvent): void {
+  const p = (e.payload ?? {}) as { level?: unknown; target?: unknown; message?: unknown };
+  const level = typeof p.level === 'string' ? p.level : 'info';
+  const target = typeof p.target === 'string' ? p.target : 'rust';
+  const message = typeof p.message === 'string' ? p.message : '';
+  record(normalizeLevel(level), 'rust', `${target} ${message}`.trim());
+}
+
+/** tracing emits debug/trace too; the panel only has three levels. */
+function normalizeLevel(level: string): LogLevel {
+  if (level === 'error') return 'error';
+  if (level === 'warn') return 'warn';
+  return 'info';
+}
+
 // One summary line per pushed event (module-load side effect; Shell.vue
 // statically imports the view chain, so this runs at app start).
-onAll((e) => record(levelFor(e), 'event', summarizeEvent(e)));
+onAll((e) => {
+  if (e.event === 'log.line') {
+    recordLogLine(e);
+    return;
+  }
+  record(levelFor(e), 'event', summarizeEvent(e));
+});
