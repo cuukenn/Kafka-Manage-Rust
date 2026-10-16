@@ -9,7 +9,7 @@ use kafka_app::services::clusters::{ClusterService, reconnect_backoff};
 use kafka_app::store::Store;
 use kafka_core::ClusterId;
 use kafka_core::cluster::{ClusterConfig, ConnectionState};
-use kafka_core::error::ErrorKind;
+use kafka_core::error::{DriverError, ErrorKind};
 use kafka_driver::mock::{FaultInjection, MockKafkaDriver};
 
 fn harness() -> (ClusterService, Store, EventBus) {
@@ -213,5 +213,57 @@ async fn manual_disconnect_cancels_the_reconnect_supervisor() {
         connection_states(&settle(&mut rx).await).is_empty(),
         "no reconnect task may run after a manual disconnect"
     );
+    assert_eq!(svc.state_of(&id), ConnectionState::Disconnected);
+}
+
+/// The connection-class filter is the design's load-bearing decision: a manual
+/// disconnect reports `not_connected`, and such calls must never resurrect a
+/// cancelled supervisor. Broker failures mean the connection works, and a bad
+/// config will never connect; only `connection`/`timeout` may degrade the cluster.
+#[tokio::test(start_paused = true)]
+async fn only_connection_class_failures_start_supervision() {
+    let (svc, _store, bus) = harness();
+    let mut rx = bus.subscribe();
+    let id = save_mock(&svc, "mock-filter").await;
+    svc.connect(&id).await.expect("connect");
+    drain(&mut rx);
+
+    for err in [
+        DriverError::NotConnected(id.to_string()),
+        DriverError::Broker { code: 1, name: "b".into(), message: "refused".into() },
+        DriverError::TopicNotFound("missing".into()),
+        DriverError::InvalidConfig { field: "name".into(), message: "bad".into() },
+    ] {
+        assert!(
+            !svc.report_driver_error(&id, &err),
+            "{} must not start supervision",
+            err.kind().as_str()
+        );
+    }
+    assert_eq!(svc.state_of(&id), ConnectionState::Connected, "non-connection failures leave the cluster healthy");
+    assert!(connection_states(&drain(&mut rx)).is_empty(), "no state event without a connection-class failure");
+
+    // `timeout` is connection-class too (the card maps transport/timeout onto it).
+    assert!(
+        svc.report_driver_error(&id, &DriverError::Timeout { operation: "meta".into(), elapsed_ms: 5 }),
+        "timeout must start supervision"
+    );
+    assert_eq!(svc.state_of(&id), ConnectionState::Degraded);
+    svc.disconnect(&id).await.expect("cancel the supervisor");
+}
+
+/// The real `cluster.info` call path is wired to the same seam: a cluster with no
+/// live driver fails `not_connected` before any driver call, so it must neither
+/// degrade nor start a supervisor. A connection-class `cluster_info` failure is
+/// not reachable through the mock, which injects faults on data operations only.
+#[tokio::test(start_paused = true)]
+async fn info_without_a_live_driver_does_not_supervise() {
+    let (svc, _store, bus) = harness();
+    let mut rx = bus.subscribe();
+    let id = save_mock(&svc, "mock-info").await;
+
+    let err = svc.info(&id).await.expect_err("no live driver");
+    assert_eq!(err.kind(), ErrorKind::NotConnected);
+    assert!(connection_states(&settle(&mut rx).await).is_empty(), "no degrade without a live driver");
     assert_eq!(svc.state_of(&id), ConnectionState::Disconnected);
 }
