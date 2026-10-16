@@ -92,6 +92,32 @@ function exportRows(): void {
   })));
 }
 
+// ---- T047b: client-side search filter over arrived rows (UI-only mirror of kafka-core
+// SearchFilter {query, matchValue=true, matchKey=false, caseSensitive=false}; regex omitted).
+// NOTE (fact only, not wired): SubscribeReq.filter: Option<SearchFilter> exists wire-side
+// (kafka-core message.rs:274) — that is subscribe-time filtering; this card filters the
+// client-side ≤500-row buffer via a computed display list, no resubscribe, no wire commands.
+const filterQuery = ref('');
+const matchValue = ref(true);
+const matchKey = ref(false);
+const caseSensitive = ref(false);
+const filterActive = computed(() => filterQuery.value.trim() !== '');
+
+function rowMatches(r: MessageRow): boolean {
+  const q = filterQuery.value.trim();
+  const hay = (bytes: number[] | null): string => {
+    const t = renderBytes(bytes, 'auto').text;
+    return caseSensitive.value ? t : t.toLowerCase();
+  };
+  const needle = caseSensitive.value ? q : q.toLowerCase();
+  if (matchValue.value && hay(r.valueBytes).includes(needle)) return true;
+  return matchKey.value && hay(r.keyBytes).includes(needle);
+}
+
+const displayRows = computed(() =>
+  filterActive.value ? rows.value.filter(rowMatches) : rows.value,
+);
+
 function onMessage(e: BridgeEvent): void {
   const p = e.payload as { subscriptionId?: string; message?: MessageEventDto } | undefined;
   if (!p || !p.message || p.subscriptionId !== subId.value || subDone.value) return; // done → stop appending
@@ -281,6 +307,13 @@ function fmtTs(ts: number): string {
         <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="rows.length === 0" @click="exportRows">导出 JSON</button>
         <span v-if="copySeq !== null" class="text-xs font-medium" :class="copyOk ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'">{{ copyOk ? '已复制' : '复制失败' }}</span>
       </div>
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <input v-model="filterQuery" type="search" placeholder="搜索（客户端过滤）" :class="`${INP} w-56`" />
+        <label :class="`${LBL} flex items-center gap-1`"><input v-model="matchValue" type="checkbox" />匹配 Value</label>
+        <label :class="`${LBL} flex items-center gap-1`"><input v-model="matchKey" type="checkbox" />匹配 Key</label>
+        <label :class="`${LBL} flex items-center gap-1`"><input v-model="caseSensitive" type="checkbox" />区分大小写</label>
+        <span v-if="filterActive" class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ displayRows.length }}/{{ rows.length }}</span>
+      </div>
       <table class="w-full border-collapse text-xs">
         <thead>
           <tr class="border-b border-slate-300 text-left text-slate-500 dark:border-slate-600 dark:text-slate-400">
@@ -288,8 +321,8 @@ function fmtTs(ts: number): string {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="rows.length === 0"><td colspan="6" class="px-2 py-3 text-slate-400 dark:text-slate-500">暂无消息</td></tr>
-          <tr v-for="r in rows" :key="r.seq" class="border-b border-slate-200 align-top dark:border-slate-700">
+          <tr v-if="displayRows.length === 0"><td colspan="6" class="px-2 py-3 text-slate-400 dark:text-slate-500">{{ filterActive ? '无匹配消息' : '暂无消息' }}</td></tr>
+          <tr v-for="r in displayRows" :key="r.seq" class="border-b border-slate-200 align-top dark:border-slate-700">
             <td class="px-2 py-1 font-mono">{{ r.partition }}</td>
             <td class="px-2 py-1 font-mono">{{ r.offset }}</td>
             <td class="max-w-40 px-2 py-1"><MessageCell :bytes="r.keyBytes" mode="auto" /></td>
