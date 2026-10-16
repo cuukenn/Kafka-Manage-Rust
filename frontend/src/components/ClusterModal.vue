@@ -2,11 +2,16 @@
 // T042 new/edit cluster modal: form maps 1:1 onto ClusterConfig (camelCase);
 // unfilled fields stay at serde defaults. auth/ssl are only sent when the
 // selected securityProtocol uses them (kafka-core cluster.rs validate()).
-import { computed, reactive } from 'vue';
+import { computed, onMounted, onUnmounted, reactive } from 'vue';
 import { clusters, saveCluster, type ClusterRow } from '../store/clusters';
 
 const props = defineProps<{ initial: ClusterRow | null }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
+
+// T050c: Esc closes; no busy flag exists here, so no guard (matches overlay click).
+const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') emit('close'); };
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 const f = reactive({
   name: props.initial?.name ?? '',

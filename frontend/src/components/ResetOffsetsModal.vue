@@ -7,7 +7,7 @@
 //   answer data = ResetOffsetsResult {groupId, applied, dryRun, error}; error non-null -> inline bar.
 // One request per distinct spec (partitions grouped), so per-row modes stay strictly wire-legal.
 // Second-confirm bar lives inside the modal (T044a lesson: never window.confirm).
-import { reactive } from 'vue';
+import { onMounted, onUnmounted, reactive } from 'vue';
 import { RpcError, rpc } from '../bridge/rpc';
 
 interface TopicPartition { topic: string; partition: number }
@@ -29,6 +29,11 @@ const rows = reactive(props.offsets.map((o) => ({
 })));
 
 const s = reactive({ busy: false, error: null as string | null, confirming: false });
+
+// T050c: Esc closes via the same emit('close') path as 取消, guarded by s.busy.
+const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape' && !s.busy) emit('close'); };
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 const inp = 'mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100';
 

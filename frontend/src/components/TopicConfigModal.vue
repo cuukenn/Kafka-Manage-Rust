@@ -6,7 +6,7 @@
 // write topic.updateConfig {clusterId, topic, set:{k:v}, unset:[k]} -> null.
 // The modal diffs its rows against the configs loaded on mount and sends
 // only the delta: new/changed entries in `set`, removed keys in `unset`.
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { rpc } from '../bridge/rpc';
 
 const props = defineProps<{ clusterId: string; topic: string }>();
@@ -22,6 +22,11 @@ const original = ref<Record<string, string>>({});
 const error = ref<string | null>(null);
 const busy = ref(false);
 const loading = ref(true);
+
+// T050c: Esc closes via the same emit('close') path as 取消, guarded by busy.
+const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape' && !busy.value) emit('close'); };
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 const inp =
   'w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100';
