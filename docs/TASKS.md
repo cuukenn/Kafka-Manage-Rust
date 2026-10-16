@@ -165,8 +165,10 @@
 | T046a | 消费面板：订阅+实时表格（R22 预拆） | T045 | npm build+cargo build+冒烟 | 🔶审查过（987c570，0C/0I），窗口项批量 |
 | T046b | 消费控制 暂停/恢复/seek（wire 缺则 BLOCKED 登缺口卡） | T046a | npm build+cargo build+冒烟 | 🔶审查过（e2f2ad6，0C/1I→T046c），窗口项批量 |
 | T046c | 消费徽标同步：订阅 subscription.state/done 事件 | T046b | npm build+cargo build+冒烟 | 🔶审查过（c83e999，0C/0I），窗口项批量 |
-| T047 | 消息详情抽屉（raw/JSON/base64）+ 搜索过滤 | T046 | 手动 | ⏸ |
-| T048 | 消费组页 + 重置位点弹窗 | T044 | 手动 | ⏸ |
+| T047 | 消息解码渲染（utf8/JSON/base64/hex）+ 复制/导出（R25 改口径） | T046 | npm build+cargo build+冒烟 | 🔶审查过（8082df9，0C/0I），窗口项批量 |
+| T047b | 消费表格搜索过滤（query/key/value/大小写，客户端过滤） | T047 | npm build+cargo build+冒烟 | ⏸ |
+| T048a | 消费组页：列表+详情（成员/位点/lag）（R22 预拆） | T044 | npm build+cargo build+冒烟 | ⏸ |
+| T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | ⏸ |
 | T049 | 日志面板 + toast + 全局 loading | T041 | 手动 | ⏸ |
 | T050 | 细节打磨：深浅色、空状态、快捷键 | T049 | 手动 | ⏸ |
 
