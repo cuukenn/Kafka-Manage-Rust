@@ -168,7 +168,7 @@
 | T047 | 消息解码渲染（utf8/JSON/base64/hex）+ 复制/导出（R25 改口径） | T046 | npm build+cargo build+冒烟 | 🔶审查过（8082df9，0C/0I），窗口项批量 |
 | T047b | 消费表格搜索过滤（query/key/value/大小写，客户端过滤） | T047 | npm build+cargo build+冒烟 | ⏸ |
 | T048a | 消费组页：列表+详情（成员/位点/lag）（R22 预拆） | T044 | npm build+cargo build+冒烟 | 🔶审查过（3c6341c，0C/1I→R26 并入 T048b），窗口项批量 |
-| T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | ⏸ |
+| T048b | 位点重置弹窗（wire 缺则 BLOCKED 登缺口卡） | T048a | npm build+cargo build+冒烟 | 🔶审查过（5547e74+9ceaf71，修复闭环），窗口项批量 |
 | T049 | 日志面板 + toast + 全局 loading | T041 | 手动 | ⏸ |
 | T050 | 细节打磨：深浅色、空状态、快捷键 | T049 | 手动 | ⏸ |
 
