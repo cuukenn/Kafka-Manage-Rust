@@ -162,7 +162,7 @@
 | T044a | Topic 表格 + 创建/删除（R22 预拆） | T043 | npm build+cargo build+冒烟 | 🔶审查过（c505656），window.confirm 待窗口实测 |
 | T044b | Topic 配置编辑（wire 不支持则 BLOCKED 登后端缺口卡） | T044a | npm build+cargo build+冒烟 | 🔶审查过（d24323f，0C/0I），窗口项批量 |
 | T045 | 生产面板（key/value/headers/partition + JSON 编辑器） | T044 | npm build+cargo build+冒烟 | 🔶审查过（7d4ca0e，0C/0I），窗口项批量 |
-| T046a | 消费面板：订阅+实时表格（R22 预拆） | T045 | npm build+cargo build+冒烟 | ⏸ |
+| T046a | 消费面板：订阅+实时表格（R22 预拆） | T045 | npm build+cargo build+冒烟 | 🔶审查过（987c570，0C/0I），窗口项批量 |
 | T046b | 消费控制 暂停/恢复/seek（wire 缺则 BLOCKED 登缺口卡） | T046a | npm build+cargo build+冒烟 | ⏸ |
 | T047 | 消息详情抽屉（raw/JSON/base64）+ 搜索过滤 | T046 | 手动 | ⏸ |
 | T048 | 消费组页 + 重置位点弹窗 | T044 | 手动 | ⏸ |
