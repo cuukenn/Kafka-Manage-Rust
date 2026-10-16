@@ -1,6 +1,6 @@
 # T074c — real：subscribe 投递成形与控制（filter/max_messages + pause/resume/seek）
 
-状态: 🔵进行中　依赖: T074b　验证: 真集群手动清单　类型: 产品码
+状态: ✅　依赖: T074b　验证: 真集群手动清单　类型: 产品码
 
 ## 目标
 
@@ -46,4 +46,8 @@
 
 ## 结果
 
-（待填：改动行数/文件数、三条命令的验证命令与结果、真集群逐项证据、Ruling 记录）
+- 改动：仅 `real/consumer.rs`，95 行/1 文件，未超上限。`Pump` 增 `topic`/`max_messages`/`filter`；`stop_requested` 换成 `Watch` + `apply_commands` + `deliver`；`run` 增加「`poll` 返回后再查一次命令 + `held` 暂存」两处竞态处理。
+- 验证：`cargo check -p kafka-driver --features real`、`cargo clippy -p kafka-driver --features real --all-targets -- -D warnings` 均绿；`cargo test -p kafka-driver`（mock 回归）72/72。
+- 真集群（Docker `rs-kafka-ui-dev`，主题 `t074c-demo` 3 分区）：① 过滤 `two` → 只收到 `t074c-demo-2@0 two` 随后 `<end>`；② `max_messages=2` → 收到前 2 条随后 `<end>`（被过滤掉的不计数）；③ `pause` 后 produce 2 条，暂停期间 `<timeout>` 一条都收不到，`resume` 后 2 条全到（验证 `held` 修复）；④ `seek` 回 0 重放 `zero`；对未订阅分区 9 的 `seek` 被忽略，之后 produce 的消息照常到达；⑤ `stop` 后投递中的 1 条仍落地、随后 `<end>`（R53 所述语义）。
+- Ruling：R53（`pause` 只停 `poll`；控制命令在下一次泵观察生效）、R54（`held` 暂存一条，暂停不丢消息）。
+- 说明：拆分前本卡与 T074b 合起来实测 331 行，按 250 行上限拆开；本卡 95 行、T074b 248 行，各自达标。

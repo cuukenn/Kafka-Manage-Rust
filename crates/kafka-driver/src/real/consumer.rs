@@ -25,8 +25,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use kafka_core::cluster::ClusterConfig;
 use kafka_core::error::DriverError;
 use kafka_core::message::{
-    MessageEvent, MessageHeader, MessageStream, OffsetStart, StreamCommand, StreamControls,
-    SubscribeReq, TimestampType,
+    MessageEvent, MessageHeader, MessageStream, OffsetStart, SearchFilter, StreamCommand,
+    StreamControls, SubscribeReq, TimestampType,
 };
 use kafka_core::topic::{ListOffsetsReq, OffsetRange, OffsetSpec, TopicPartition};
 
@@ -113,8 +113,11 @@ impl super::RealKafkaDriver {
         consumer.assign(&assignment).map_err(|err| transport(&server, &err))?;
 
         let plan = Pump {
+            topic: req.topic.clone(),
             targets: as_raw(&targets),
             follow: req.follow,
+            max_messages: req.max_messages,
+            filter: req.filter.clone(),
             poll: Duration::from_millis(live.cfg.timeouts.poll_ms.max(1)),
         };
         let (controls, commands) = StreamControls::channel(req.subscription_id.clone());
@@ -184,8 +187,11 @@ async fn starts(
 
 /// Everything a pump needs, owned, so it can move onto the blocking pool.
 struct Pump {
+    topic: String,
     targets: Vec<(String, i32)>,
     follow: bool,
+    max_messages: Option<u64>,
+    filter: Option<SearchFilter>,
     poll: Duration,
 }
 
@@ -215,25 +221,55 @@ fn run(
     if plan.targets.is_empty() {
         return Ok(());
     }
-    let mut drained: HashSet<i32> = HashSet::new();
+    let mut state = Watch { paused: false, drained: HashSet::new() };
+    let mut sent: u64 = 0;
+    // A message fetched just before a pause landed; held so the pause is not
+    // silently skipped. It can never grow past one, because a paused pump stops
+    // polling (R54).
+    let mut held: Option<MessageEvent> = None;
 
     loop {
-        if stop_requested(commands) || tx.is_closed() {
+        // Commands win over the poll timeout, so pause/stop land promptly.
+        if !apply_commands(consumer, server, plan, commands, &mut state)? || tx.is_closed() {
             return Ok(());
+        }
+        if !state.paused {
+            if let Some(event) = held.take() {
+                if !deliver(event, plan, &mut sent, tx) {
+                    return Ok(());
+                }
+                continue;
+            }
+        }
+        if state.paused {
+            std::thread::sleep(plan.poll);
+            continue;
         }
 
         match consumer.poll(plan.poll) {
             Some(Ok(message)) => {
-                drained.remove(&message.partition());
-                if tx.blocking_send(Ok(event_from(&message))).is_err() {
+                state.drained.remove(&message.partition());
+                let event = event_from(&message);
+                // A pause or a stop may have arrived while we were blocked in poll.
+                if !apply_commands(consumer, server, plan, commands, &mut state)? {
+                    return Ok(());
+                }
+                if tx.is_closed() {
+                    return Ok(());
+                }
+                if state.paused {
+                    held = Some(event);
+                    continue;
+                }
+                if !deliver(event, plan, &mut sent, tx) {
                     return Ok(());
                 }
             }
             // With `enable.partition.eof` on, this is how a bounded read learns a
             // partition is exhausted (R51).
             Some(Err(KafkaError::PartitionEOF(partition))) => {
-                drained.insert(partition);
-                if !plan.follow && drained.len() == plan.targets.len() {
+                state.drained.insert(partition);
+                if !plan.follow && state.drained.len() == plan.targets.len() {
                     return Ok(());
                 }
             }
@@ -248,16 +284,61 @@ fn run(
     }
 }
 
-/// `Stop` ends the pump, and the command channel stays alive so the caller's
-/// controls never error out. `pause`/`resume`/`seek` are landed by T074c.
-fn stop_requested(commands: &mut mpsc::UnboundedReceiver<StreamCommand>) -> bool {
+/// What a pump tracks between polls.
+struct Watch {
+    paused: bool,
+    /// Partitions that reported `PartitionEOF`; a bounded read ends once every
+    /// assigned partition is in here.
+    drained: HashSet<i32>,
+}
+
+/// Apply every queued command. Returns `false` once the pump must stop.
+fn apply_commands(
+    consumer: &BaseConsumer,
+    server: &str,
+    plan: &Pump,
+    commands: &mut mpsc::UnboundedReceiver<StreamCommand>,
+    state: &mut Watch,
+) -> Result<bool, DriverError> {
     loop {
         match commands.try_recv() {
-            Ok(StreamCommand::Stop) | Err(mpsc::error::TryRecvError::Disconnected) => return true,
-            Ok(_) => {}
-            Err(mpsc::error::TryRecvError::Empty) => return false,
+            Ok(StreamCommand::Stop) | Err(mpsc::error::TryRecvError::Disconnected) => return Ok(false),
+            Ok(StreamCommand::Pause) => state.paused = true,
+            Ok(StreamCommand::Resume) => state.paused = false,
+            Ok(StreamCommand::Seek { partition, offset, .. }) => {
+                let target = to_i32(partition);
+                // Only assigned partitions can be seeked; the rest is ignored, the
+                // same way the mock ignores a seek it does not own.
+                if plan.targets.iter().any(|(_, id)| *id == target) {
+                    consumer
+                        .seek(&plan.topic, target, Offset::Offset(offset.max(0)), plan.poll)
+                        .map_err(|err| transport(server, &err))?;
+                    // A partition seeked into is not drained any more, or a bounded
+                    // read would end on the next tick.
+                    state.drained.remove(&target);
+                }
+            }
+            Err(mpsc::error::TryRecvError::Empty) => return Ok(true),
         }
     }
+}
+
+/// Hand one event to the reader, filtered and counted. `false` means the pump is
+/// done: the reader is gone, or `max_messages` has been reached.
+fn deliver(
+    event: MessageEvent,
+    plan: &Pump,
+    sent: &mut u64,
+    tx: &mpsc::Sender<Result<MessageEvent, DriverError>>,
+) -> bool {
+    if plan.filter.as_ref().is_some_and(|filter| !filter.matches(&event)) {
+        return true;
+    }
+    if tx.blocking_send(Ok(event)).is_err() {
+        return false;
+    }
+    *sent += 1;
+    !plan.max_messages.is_some_and(|max| *sent >= max)
 }
 
 /// Copy what the reader needs out of a borrowed message; the borrow dies here.
