@@ -2,9 +2,10 @@
 //!
 //! T070 lands the skeleton: config mapping (see [`config`]) and the connection
 //! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). T071a adds
-//! `list_topics` and the per-operation session plumbing (see [`topic`]). The
-//! remaining domain methods answer `Unsupported` until T071b–T076 fill them in,
-//! so each of those cards is gated by the same `cargo check --features real`.
+//! `list_topics` and the per-operation session plumbing, T071b adds
+//! `describe_topics` (see [`topic`]). The remaining domain methods answer
+//! `Unsupported` until T072–T076 fill them in, so each of those cards is gated by
+//! the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
@@ -184,8 +185,13 @@ impl KafkaDriver for RealKafkaDriver {
         Ok(topic::infos(&metadata))
     }
 
-    async fn describe_topics(&self, _req: &DescribeTopicsReq) -> Result<Vec<TopicDetail>, DriverError> {
-        Err(self.require_unsupported("describe_topics lands in T071b"))
+    async fn describe_topics(&self, req: &DescribeTopicsReq) -> Result<Vec<TopicDetail>, DriverError> {
+        let live = self.live().await?;
+        // The metadata snapshot is consumed before the awaits below: librdkafka's
+        // metadata is not `Send`, so it must not cross a suspension point (R35).
+        let metadata = fetch_metadata(&live, None).await?;
+        let planned = topic::plan(metadata, req)?;
+        topic::assemble(&live, planned).await
     }
 
     async fn create_topic(&self, _req: &CreateTopicReq) -> Result<(), DriverError> {

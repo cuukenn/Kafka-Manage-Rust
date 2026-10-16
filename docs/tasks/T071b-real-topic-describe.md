@@ -1,6 +1,6 @@
 # T071b — real：describe_topics（分区明细 + 起止位点 + 配置）
 
-状态: ⬜　依赖: T071a　验证: `cargo check -p kafka-driver --features real` + 真集群手动清单　类型: 产品码
+状态: ✅　依赖: T071a　验证: `cargo check -p kafka-driver --features real` + 真集群手动清单　类型: 产品码
 
 ## 目标
 把 `describe_topics` 接通：按 `DescribeTopicsReq` 出分区级明细（leader / 副本 / ISR / 起止位点），
@@ -54,4 +54,13 @@
   断开后 → `NotConnected`
 
 ## 结果（完成后填写，≤5 行）
--
+- 2 文件 212 行（`real/mod.rs` +11 接线、`real/topic.rs` +201），`check`/`clippy -D warnings` 无告警，mock 72/72 绿。
+- `plan`（同步，吃掉 `Metadata` 所有权后拷成 owned `Planned`，R35）→ `assemble`（异步）：选 topic 规则与 mock
+  对齐（空 names = 全部可见、点名缺失 → `TopicNotFound`、显式点名 internal 放行）。
+- 位点：所有分区一次 `spawn_blocking` 内循环 `fetch_watermarks`；配置：一次 `describe_configs` 批拉，R34 只留
+  `!is_default && !is_sensitive` 且值存在的项。
+- Docker Kafka 实测：`t071-demo` 3 分区 leader=1/replicas=[1]/isr=[1]、空 topic `low==high==0`、生产 1 条后 p2 `high=1`；
+  `nope` → `TopicNotFound`；空 names → 只出 `t071-demo`，`include_internal=true` → 追加 `__consumer_offsets`；
+  显式点名 `__consumer_offsets`（`include_internal=false`）放行；改 `retention.ms`+`cleanup.policy` 后只回这两项；
+  断开后 → `NotConnected`。
+- `leader_epoch` 恒 `None`（librdkafka metadata 不暴露）；R36：带 `error()` 的点名 topic 也按 `TopicNotFound`。

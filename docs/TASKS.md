@@ -75,8 +75,8 @@
   真实 Kafka 用 Docker Desktop：`scripts/kafka/docker-compose.yml`（KRaft 单节点，localhost:9092，
   cluster `5L6g3nShT-eMCtK--X86sw`）。**T070 已 ✅**（real 模块骨架 + 连接生命周期，2 文件 248 行；
   真集群实测 connect/cluster_info/disconnect 通过）。**T071 按 250 行上限拆成 T071a/T071b**：T071a（会话脚手架
-  `Live`/`fetch_metadata` + `list_topics`）已 ✅，下一步 T071b（`describe_topics`）。
-
+  `Live`/`fetch_metadata` + `list_topics`）已 ✅，T071b（`describe_topics`：分区明细 + 起止位点 + 只回被覆盖的
+  配置）已 ✅；下一步 T072（create/delete/update topic）。
 ---
 
 ## 2. 任务索引
@@ -196,7 +196,7 @@
 |---|---|---|---|---|
 | T070 | `real` 模块骨架 + 配置映射 + 连接生命周期 | T001 | `cargo check -p kafka-driver --features real` | ✅（248 行/2 文件；check+clippy 绿；Docker Kafka 实测 connect/cluster_info/disconnect；R30/R32） |
 | T071a | real：每操作会话脚手架 + `list_topics` | T070 | 真集群手动清单 | ✅（92 行/2 文件；check+clippy 绿；Docker Kafka 实测 list_topics 出 t071-demo internal=false 3 分区 rf=1 与 __consumer_offsets internal=true 50 分区；断开 → NotConnected；R33/R35） |
-| T071b | real：`describe_topics`（分区明细 + 起止位点 + 配置） | T071a | 真集群手动清单 | ⏸ |
+| T071b | real：`describe_topics`（分区明细 + 起止位点 + 配置） | T071a | 真集群手动清单 | ✅（212 行/2 文件；check+clippy 绿；Docker Kafka 实测 3 分区 leader/副本/ISR、空 topic low==high==0、生产后高水位 1、点名 nope → TopicNotFound、include_internal 切换、显式点名 internal 放行、只回被覆盖配置；R34/R36） |
 | T072 | real：create / delete / update topic | T071 | 真集群手动清单 | ⏸ |
 | T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ⏸ |
 | T074 | real：subscribe 流 + list_offsets | T073 | 真集群手动清单 | ⏸ |
