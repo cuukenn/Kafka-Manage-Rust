@@ -7,16 +7,17 @@
 
 use std::time::Duration;
 
-use rdkafka::consumer::{BaseConsumer, Consumer};
+use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer};
 use rdkafka::error::{KafkaError, RDKafkaErrorCode};
 use rdkafka::groups::GroupList;
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 
 use kafka_core::error::DriverError;
 use kafka_core::group::{
-    GroupDetail, GroupInfo, GroupMember, GroupOffsetEntry, GroupState, ListGroupOffsetsReq,
+    CommitOffsetsReq, GroupDetail, GroupInfo, GroupMember, GroupOffsetEntry, GroupState,
+    ListGroupOffsetsReq, ResetOffsetsReq, ResetOffsetsResult, ResetSpec,
 };
-use kafka_core::topic::TopicPartition;
+use kafka_core::topic::{TopicPartition, TopicPartitionOffset};
 
 use super::Live;
 
@@ -42,6 +43,188 @@ pub(super) async fn describe(live: &Live, ids: &[String]) -> Result<Vec<GroupDet
         }
     }
     Ok(out)
+}
+
+/// A one-shot consumer that speaks for an explicit group. Nothing is ever polled
+/// or joined: the calls below address the group's coordinator directly.
+fn group_consumer(live: &Live, group_id: &str) -> Result<BaseConsumer, DriverError> {
+    super::consumer::consumer_config_for(&live.cfg, group_id)?
+        .create::<BaseConsumer>()
+        .map_err(|e| DriverError::Connection {
+            server: live.cfg.bootstrap_joined(),
+            message: e.to_string(),
+        })
+}
+
+/// Writes committed offsets for one group.
+pub(super) async fn commit(live: &Live, req: CommitOffsetsReq) -> Result<(), DriverError> {
+    let Some(group_id) = req.group_id.as_deref().filter(|id| !id.trim().is_empty()) else {
+        return Err(DriverError::unsupported("real commit requires an explicit group id"));
+    };
+    if req.offsets.is_empty() {
+        return Err(DriverError::invalid("offsets", "at least one offset is required"));
+    }
+
+    let consumer = group_consumer(live, group_id)?;
+    let mut list = TopicPartitionList::with_capacity(req.offsets.len());
+    for entry in &req.offsets {
+        let partition = super::consumer::to_i32(entry.partition);
+        list.add_partition_offset(&entry.topic, partition, Offset::Offset(entry.offset))
+            .map_err(|e| DriverError::invalid("offsets", e.to_string()))?;
+        if !entry.metadata.is_empty() {
+            if let Some(mut element) = list.find_partition(&entry.topic, partition) {
+                element.set_metadata(&entry.metadata);
+            }
+        }
+    }
+    commit_list(live, consumer, list).await
+}
+
+/// Computes a group's target offsets and, unless this is a dry run, writes them.
+pub(super) async fn reset(
+    live: &Live,
+    req: &ResetOffsetsReq,
+) -> Result<ResetOffsetsResult, DriverError> {
+    req.validate()?;
+    if !exists(live, &req.group_id).await? {
+        return Err(DriverError::GroupNotFound(req.group_id.clone()));
+    }
+    let targets = reset_targets(live, req).await?;
+    let marks = super::consumer::watermarks(live, &targets).await?;
+
+    let resolved: Vec<i64> = match req.spec {
+        ResetSpec::Earliest => marks.iter().map(|(low, _)| *low).collect(),
+        ResetSpec::Latest => marks.iter().map(|(_, high)| *high).collect(),
+        ResetSpec::ToOffset(value) => {
+            let mut out = Vec::with_capacity(targets.len());
+            for (target, (low, high)) in targets.iter().zip(&marks) {
+                if value < *low || value > *high {
+                    return Err(DriverError::OffsetOutOfRange {
+                        topic: target.topic.clone(),
+                        partition: target.partition,
+                        requested: value,
+                        low: *low,
+                        high: *high,
+                    });
+                }
+                out.push(value);
+            }
+            out
+        }
+        ResetSpec::ToTimestamp(timestamp) => {
+            super::consumer::at_or_after(live, &targets, &marks, timestamp).await?
+        }
+    };
+
+    let applied: Vec<TopicPartitionOffset> = targets
+        .iter()
+        .zip(&resolved)
+        .map(|(target, offset)| TopicPartitionOffset {
+            topic: target.topic.clone(),
+            partition: target.partition,
+            offset: *offset,
+            metadata: String::new(),
+            timestamp: None,
+            leader_epoch: None,
+        })
+        .collect();
+
+    if !req.dry_run && !applied.is_empty() {
+        let consumer = group_consumer(live, &req.group_id)?;
+        let mut list = TopicPartitionList::with_capacity(applied.len());
+        for entry in &applied {
+            list.add_partition_offset(
+                &entry.topic,
+                super::consumer::to_i32(entry.partition),
+                Offset::Offset(entry.offset),
+            )
+            .map_err(|e| DriverError::invalid("partitions", e.to_string()))?;
+        }
+        commit_list(live, consumer, list).await?;
+    }
+
+    tracing::info!(
+        group = %req.group_id,
+        partitions = applied.len(),
+        dry_run = req.dry_run,
+        "real group offsets reset"
+    );
+    Ok(ResetOffsetsResult {
+        group_id: req.group_id.clone(),
+        applied,
+        dry_run: req.dry_run,
+        error: None,
+    })
+}
+
+/// The partitions a reset covers: the explicit ones, else the named topics'
+/// partitions, else whatever the group already committed to.
+async fn reset_targets(
+    live: &Live,
+    req: &ResetOffsetsReq,
+) -> Result<Vec<TopicPartition>, DriverError> {
+    if !req.partitions.is_empty() {
+        check_partitions(live, &req.partitions).await?;
+        return Ok(req.partitions.clone());
+    }
+    if !req.topics.is_empty() {
+        return offset_targets(live, &req.topics).await;
+    }
+    let committed = offsets(
+        live,
+        &ListGroupOffsetsReq {
+            group_id: req.group_id.clone(),
+            topics: Vec::new(),
+            with_lag: false,
+        },
+    )
+    .await?;
+    Ok(committed
+        .into_iter()
+        .map(|entry| TopicPartition::new(entry.topic, entry.partition))
+        .collect())
+}
+
+/// Explicit partitions still have to name a real topic and partition, otherwise
+/// the failure surfaces later as an opaque watermark transport error.
+async fn check_partitions(live: &Live, wanted: &[TopicPartition]) -> Result<(), DriverError> {
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    let metadata = super::fetch_metadata(live, None).await?;
+    for target in wanted {
+        let topic = metadata
+            .topics()
+            .iter()
+            .find(|entry| entry.name() == target.topic && entry.error().is_none())
+            .ok_or_else(|| DriverError::TopicNotFound(target.topic.clone()))?;
+        let known = topic
+            .partitions()
+            .iter()
+            .any(|p| p.error().is_none() && p.id() == super::consumer::to_i32(target.partition));
+        if !known {
+            return Err(DriverError::PartitionNotFound {
+                topic: target.topic.clone(),
+                partition: target.partition,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Commits a prepared list synchronously, so a returned `Ok` means the coordinator
+/// stored it rather than merely queued it.
+async fn commit_list(
+    live: &Live,
+    consumer: BaseConsumer,
+    list: TopicPartitionList,
+) -> Result<(), DriverError> {
+    let server = live.cfg.bootstrap_joined();
+    let timeout = Duration::from_millis(live.cfg.timeouts.request_ms.max(1));
+    tokio::task::spawn_blocking(move || consumer.commit(&list, CommitMode::Sync))
+        .await
+        .map_err(|e| DriverError::other(format!("commit task failed: {e}")))?
+        .map_err(|e| group_error("commit", &server, timeout, e))
 }
 
 /// Both views of one group-list response, so a single fetch can answer either call.
@@ -71,12 +254,7 @@ pub(super) async fn offsets(
     if targets.is_empty() {
         return Ok(Vec::new());
     }
-    let consumer = super::consumer::consumer_config_for(&live.cfg, &req.group_id)?
-        .create::<BaseConsumer>()
-        .map_err(|e| DriverError::Connection {
-            server: live.cfg.bootstrap_joined(),
-            message: e.to_string(),
-        })?;
+    let consumer = group_consumer(live, &req.group_id)?;
 
     let mut requested = TopicPartitionList::with_capacity(targets.len());
     for target in &targets {
@@ -88,7 +266,7 @@ pub(super) async fn offsets(
     let committed = tokio::task::spawn_blocking(move || consumer.committed_offsets(requested, timeout))
         .await
         .map_err(|e| DriverError::other(format!("committed task failed: {e}")))?
-        .map_err(|e| group_error(&server, timeout, e))?;
+        .map_err(|e| group_error("offset fetch", &server, timeout, e))?;
 
     // Only partitions the group actually committed are rows; anything else in the
     // response is `Offset::Invalid`, i.e. "never committed here" (R58).
@@ -182,7 +360,7 @@ async fn fetch(live: &Live, group: Option<String>) -> Result<Snapshot, DriverErr
     })
     .await
     .map_err(|e| DriverError::other(format!("group task failed: {e}")))?;
-    outcome.map_err(|e| group_error(&server, timeout, e))
+    outcome.map_err(|e| group_error("fetch_group_list", &server, timeout, e))
 }
 
 fn convert(list: &GroupList) -> Snapshot {
@@ -277,9 +455,14 @@ impl<'a> Reader<'a> {
     }
 }
 
-fn group_error(server: &str, timeout: Duration, err: KafkaError) -> DriverError {
-    if matches!(err, KafkaError::GroupListFetch(RDKafkaErrorCode::RequestTimedOut)) {
-        return DriverError::timeout("fetch_group_list", timeout.as_millis() as u64);
+fn group_error(operation: &str, server: &str, timeout: Duration, err: KafkaError) -> DriverError {
+    let timed_out = matches!(
+        err,
+        KafkaError::GroupListFetch(RDKafkaErrorCode::RequestTimedOut)
+            | KafkaError::ConsumerCommit(RDKafkaErrorCode::RequestTimedOut)
+    );
+    if timed_out {
+        return DriverError::timeout(operation, timeout.as_millis() as u64);
     }
     DriverError::Connection { server: server.to_string(), message: err.to_string() }
 }

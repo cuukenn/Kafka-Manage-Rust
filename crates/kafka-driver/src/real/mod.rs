@@ -6,9 +6,9 @@
 //! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
 //! config writer (see [`admin`]), and T073 adds batch production (see [`producer`]).
 //! T074a adds offset lookups (see [`consumer`]) and T074b the subscription stream,
-//! T075a consumer-group metadata (see [`group`]) and T075b their committed offsets.
-//! The remaining domain methods answer `Unsupported` until T075c–T076 fill them in,
-//! so each of those cards is gated by the same `cargo check --features real`.
+//! T075a consumer-group metadata (see [`group`]), T075b their committed offsets and
+//! T075c the offset writers. Every trait method is implemented; T076 only widens the
+//! config mapping (`config`), so its card is gated by the same `cargo check`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
@@ -96,10 +96,6 @@ impl RealKafkaDriver {
             }),
             None => Err(DriverError::NotConnected(self.name.read().await.clone())),
         }
-    }
-
-    fn require_unsupported(&self, what: &str) -> DriverError {
-        DriverError::unsupported(format!("real driver: {what}"))
     }
 }
 
@@ -262,12 +258,17 @@ impl KafkaDriver for RealKafkaDriver {
         group::offsets(&live, req).await
     }
 
-    async fn reset_offsets(&self, _req: &ResetOffsetsReq) -> Result<ResetOffsetsResult, DriverError> {
-        Err(self.require_unsupported("reset_offsets lands in T075"))
+    async fn reset_offsets(
+        &self,
+        req: &ResetOffsetsReq,
+    ) -> Result<ResetOffsetsResult, DriverError> {
+        let live = self.live().await?;
+        group::reset(&live, req).await
     }
 
-    async fn commit_offsets(&self, _req: CommitOffsetsReq) -> Result<(), DriverError> {
-        Err(self.require_unsupported("commit_offsets lands in T075"))
+    async fn commit_offsets(&self, req: CommitOffsetsReq) -> Result<(), DriverError> {
+        let live = self.live().await?;
+        group::commit(&live, req).await
     }
 
     /// Only what the landed cards implement; each card flips on what it lands
@@ -277,6 +278,8 @@ impl KafkaDriver for RealKafkaDriver {
             admin_api: true,
             topic_config_write: true,
             consumer_groups: true,
+            offset_reset: true,
+            offset_commit: true,
             ..DriverCapabilities::default()
         }
     }

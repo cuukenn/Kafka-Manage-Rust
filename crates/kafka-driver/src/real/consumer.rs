@@ -458,7 +458,7 @@ pub(super) async fn watermarks(
 /// The first offset at or after `timestamp`, per partition. A partition whose log
 /// holds nothing that new falls back to its high watermark, which is what the mock
 /// reports too (R48).
-async fn at_or_after(
+pub(super) async fn at_or_after(
     live: &Live,
     targets: &[TopicPartition],
     marks: &[(i64, i64)],
@@ -507,7 +507,7 @@ fn to_u32(partition: i32) -> u32 {
     u32::try_from(partition).unwrap_or_default()
 }
 
-fn to_i32(partition: u32) -> i32 {
+pub(super) fn to_i32(partition: u32) -> i32 {
     i32::try_from(partition).unwrap_or(i32::MAX)
 }
 
