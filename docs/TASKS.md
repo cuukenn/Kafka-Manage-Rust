@@ -172,7 +172,7 @@
 | T049a | 全局 toast + 全局 loading（R22 预拆） | T047b | npm build+cargo build+冒烟 | 🔶审查过（9c14cc9，0C/0I），窗口项批量 |
 | T049b | 日志面板（环形缓冲+事件/RPC 摘要） | T049a | npm build+cargo build+冒烟 | 🔶审查过（fa606cd，0C/0I），窗口项批量 |
 | T050a | 空状态组件+集群/topic/消费组三视图接线（R22 预拆） | T049b | npm build+cargo build+冒烟 | 🔶审查过（faf8421+d501ccc 修复闭环），窗口项批量 |
-| T050b | 消费空状态 + Alt+1..6 导航快捷键 | T050a | npm build+cargo build+冒烟 | ⏸ |
+| T050b | 消费空状态 + Alt+1..6 导航快捷键 | T050a | npm build+cargo build+冒烟 | 🔶审查过（7d9caf7，0C/0I），窗口项批量 |
 | T050c | 弹窗 Esc 关闭（四弹窗各接局部 keydown） | T050b | npm build+cargo build+冒烟 | ⏸ |
 
 ### 阶段 5 · 事件驱动 NIO 流强化
