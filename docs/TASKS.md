@@ -77,7 +77,7 @@
   真集群实测 connect/cluster_info/disconnect 通过）。**T071 按 250 行上限拆成 T071a/T071b**：T071a（会话脚手架
   `Live`/`fetch_metadata` + `list_topics`）已 ✅，T071b（`describe_topics`：分区明细 + 起止位点 + 只回被覆盖的
   配置）已 ✅；**T072 同样按 250 行上限拆成 T072a/T072b**：T072a（`create_topic` / `delete_topics` + admin 脚手架）
-  已 ✅，**T072b（`update_topic_config`：先读回被覆盖项、合并后整体替换）已 ✅**；**T073（produce：整批入队 + 投递回执，并按请求顺序回填）已 ✅**，同时显式关掉 `allow.auto.create.topics`，消掉了 T072b 探测不存在主题时把主题建出来的副作用；**T074 按 250 行上限拆成 T074a/T074b/T074c**：T074a（`list_offsets`：分区展开 + 一次批量取水印 + 借一次性 consumer 解析时间戳）已 ✅；T074b（subscribe 流核心：`assign` 起读 + 有界/追尾 + `stop` + 消息映射）已 ✅——真集群实测发现 `rd_kafka_assign` 需要 `group.id`，故配置合成组名（R50）；T074c（投递成形与控制：客户端 filter / max_messages、pause/resume/seek，并处理「命令在 `poll` 阻塞期间到达」的竞态与暂停消息暂存）已 ✅；**T075 同样按 250 行上限拆成 T075a/T075b/T075c**：T075a（消费组列表与详情：`fetch_group_list` + 本地解码成员分配，并处理 `coordinator_id` / `is_local` 不可得的取舍）已 ✅；下一步 T075b（消费组位点 + 滞后）。
+  已 ✅，**T072b（`update_topic_config`：先读回被覆盖项、合并后整体替换）已 ✅**；**T073（produce：整批入队 + 投递回执，并按请求顺序回填）已 ✅**，同时显式关掉 `allow.auto.create.topics`，消掉了 T072b 探测不存在主题时把主题建出来的副作用；**T074 按 250 行上限拆成 T074a/T074b/T074c**：T074a（`list_offsets`：分区展开 + 一次批量取水印 + 借一次性 consumer 解析时间戳）已 ✅；T074b（subscribe 流核心：`assign` 起读 + 有界/追尾 + `stop` + 消息映射）已 ✅——真集群实测发现 `rd_kafka_assign` 需要 `group.id`，故配置合成组名（R50）；T074c（投递成形与控制：客户端 filter / max_messages、pause/resume/seek，并处理「命令在 `poll` 阻塞期间到达」的竞态与暂停消息暂存）已 ✅；**T075 同样按 250 行上限拆成 T075a/T075b/T075c**：T075a（消费组列表与详情：`fetch_group_list` + 本地解码成员分配，并处理 `coordinator_id` / `is_local` 不可得的取舍）已 ✅；**T075b（消费组位点与滞后：借一次性 consumer 读 `committed_offsets`，再对提交过的分区取一次水印算 lag）已 ✅**；下一步 T075c（reset/commit 位点）。
 
 ---
 
@@ -206,7 +206,7 @@
 | T074b | real：subscribe 流核心（有界/追尾 + stop） | T074a | 真集群手动清单 | ✅（248 行/2 文件；R49/R50/R51/R52） |
 | T074c | real：subscribe 投递成形与控制（filter/max + pause/resume/seek） | T074b | 真集群手动清单 | ✅（95 行/1 文件；R53/R54） |
 | T075a | real：消费组列表与详情（list / describe） | T071b | 真集群手动清单 | ✅（170 行/2 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测列出活跃组 t075a-g（Stable/1 人/range）与空闲组 t071-g（Empty/0 人）、成员 id/host/分配分区与 `kafka-consumer-groups.sh --describe` 逐列一致、不存在的组 → GroupNotFound；R55/R56/R57） |
-| T075b | real：消费组位点 + 滞后 | T075a | 真集群手动清单 | ⏸ |
+| T075b | real：消费组位点 + 滞后 | T075a | 真集群手动清单 | ✅（144 行/3 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测 reset 到 earliest 后读回 offset=0 且 lag 3/1/1 与 broker LAG 列一致、`with_lag=false` 全 None、未提交主题回 0 行、ghost 组/主题与空白组名的三种错误路径；R58/R59/R60） |
 | T075c | real：reset_offsets / commit_offsets | T075b | 真集群手动清单 | ⏸ |
 | T076 | real：SASL/SSL 参数映射（来自 `ClusterConfig`） | T070 | 真集群手动清单 | ⏸ |
 | T077 | Mock/Real 行为对齐测试架（`#[ignore]` + 环境变量门控） | T071–T076 | `cargo test -p kafka-driver -- --ignored` | ⏸ |

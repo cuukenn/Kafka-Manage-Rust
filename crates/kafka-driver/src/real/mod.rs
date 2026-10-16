@@ -6,9 +6,9 @@
 //! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
 //! config writer (see [`admin`]), and T073 adds batch production (see [`producer`]).
 //! T074a adds offset lookups (see [`consumer`]) and T074b the subscription stream,
-//! and T075a consumer-group metadata (see [`group`]). The remaining domain methods
-//! answer `Unsupported` until T075b–T076 fill them in, so each of those cards is
-//! gated by the same `cargo check --features real`.
+//! T075a consumer-group metadata (see [`group`]) and T075b their committed offsets.
+//! The remaining domain methods answer `Unsupported` until T075c–T076 fill them in,
+//! so each of those cards is gated by the same `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
 
@@ -256,9 +256,10 @@ impl KafkaDriver for RealKafkaDriver {
 
     async fn list_group_offsets(
         &self,
-        _req: &ListGroupOffsetsReq,
+        req: &ListGroupOffsetsReq,
     ) -> Result<Vec<GroupOffsetEntry>, DriverError> {
-        Err(self.require_unsupported("list_group_offsets lands in T075"))
+        let live = self.live().await?;
+        group::offsets(&live, req).await
     }
 
     async fn reset_offsets(&self, _req: &ResetOffsetsReq) -> Result<ResetOffsetsResult, DriverError> {

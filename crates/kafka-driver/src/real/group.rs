@@ -7,11 +7,15 @@
 
 use std::time::Duration;
 
+use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::error::{KafkaError, RDKafkaErrorCode};
 use rdkafka::groups::GroupList;
+use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 
 use kafka_core::error::DriverError;
-use kafka_core::group::{GroupDetail, GroupInfo, GroupMember, GroupState};
+use kafka_core::group::{
+    GroupDetail, GroupInfo, GroupMember, GroupOffsetEntry, GroupState, ListGroupOffsetsReq,
+};
 use kafka_core::topic::TopicPartition;
 
 use super::Live;
@@ -44,6 +48,128 @@ pub(super) async fn describe(live: &Live, ids: &[String]) -> Result<Vec<GroupDet
 struct Snapshot {
     list: Vec<GroupInfo>,
     details: Vec<GroupDetail>,
+}
+
+/// Whether the broker knows this group at all.
+pub(super) async fn exists(live: &Live, id: &str) -> Result<bool, DriverError> {
+    Ok(!fetch(live, Some(id.to_string())).await?.list.is_empty())
+}
+
+/// The committed offsets of one group, with lag when the caller asked for it.
+pub(super) async fn offsets(
+    live: &Live,
+    req: &ListGroupOffsetsReq,
+) -> Result<Vec<GroupOffsetEntry>, DriverError> {
+    if req.group_id.trim().is_empty() {
+        return Err(DriverError::invalid("groupId", "group id must not be empty"));
+    }
+    if !exists(live, &req.group_id).await? {
+        return Err(DriverError::GroupNotFound(req.group_id.clone()));
+    }
+
+    let targets = offset_targets(live, &req.topics).await?;
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let consumer = super::consumer::consumer_config_for(&live.cfg, &req.group_id)?
+        .create::<BaseConsumer>()
+        .map_err(|e| DriverError::Connection {
+            server: live.cfg.bootstrap_joined(),
+            message: e.to_string(),
+        })?;
+
+    let mut requested = TopicPartitionList::with_capacity(targets.len());
+    for target in &targets {
+        requested.add_partition(&target.topic, i32::try_from(target.partition).unwrap_or(i32::MAX));
+    }
+
+    let server = live.cfg.bootstrap_joined();
+    let timeout = Duration::from_millis(live.cfg.timeouts.request_ms.max(1));
+    let committed = tokio::task::spawn_blocking(move || consumer.committed_offsets(requested, timeout))
+        .await
+        .map_err(|e| DriverError::other(format!("committed task failed: {e}")))?
+        .map_err(|e| group_error(&server, timeout, e))?;
+
+    // Only partitions the group actually committed are rows; anything else in the
+    // response is `Offset::Invalid`, i.e. "never committed here" (R58).
+    let rows: Vec<(TopicPartition, i64, String)> = committed
+        .elements()
+        .into_iter()
+        .filter_map(|element| match element.offset() {
+            Offset::Offset(offset) => Some((
+                TopicPartition::new(
+                    element.topic(),
+                    u32::try_from(element.partition()).unwrap_or_default(),
+                ),
+                offset,
+                element.metadata().to_string(),
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let highs: Option<Vec<i64>> = if req.with_lag {
+        let wanted: Vec<TopicPartition> = rows.iter().map(|(target, _, _)| target.clone()).collect();
+        match super::consumer::watermarks(live, &wanted).await {
+            Ok(marks) => Some(marks.into_iter().map(|(_, high)| high).collect()),
+            Err(error) => {
+                tracing::warn!(%error, partitions = wanted.len(), "log end offsets unavailable; lag left empty");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok(rows
+        .into_iter()
+        .enumerate()
+        .map(|(index, (target, offset, metadata))| GroupOffsetEntry {
+            topic: target.topic,
+            partition: target.partition,
+            offset,
+            metadata,
+            committed_at: None,
+            lag: highs.as_ref().map(|highs| (highs[index] - offset).max(0)),
+        })
+        .collect())
+}
+
+/// The partitions a group-offset request covers: the named topics' healthy
+/// partitions, or every partition of every non-internal topic when none are named
+/// (R60).
+async fn offset_targets(live: &Live, topics: &[String]) -> Result<Vec<TopicPartition>, DriverError> {
+    let metadata = super::fetch_metadata(live, None).await?;
+    let mut out = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for entry in metadata.topics() {
+        if entry.error().is_some() {
+            continue;
+        }
+        let name = entry.name();
+        let wanted = if topics.is_empty() {
+            !super::topic::is_internal(name)
+        } else {
+            topics.iter().any(|topic| topic == name)
+        };
+        if !wanted {
+            continue;
+        }
+        seen.push(name);
+        for partition in entry.partitions() {
+            if partition.error().is_some() {
+                continue;
+            }
+            out.push(TopicPartition::new(
+                name,
+                u32::try_from(partition.id()).unwrap_or_default(),
+            ));
+        }
+    }
+    if let Some(missing) = topics.iter().find(|topic| !seen.contains(&topic.as_str())) {
+        return Err(DriverError::TopicNotFound(missing.clone()));
+    }
+    Ok(out)
 }
 
 async fn fetch(live: &Live, group: Option<String>) -> Result<Snapshot, DriverError> {

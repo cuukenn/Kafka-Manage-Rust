@@ -45,8 +45,17 @@ const READER_GROUP: &str = "rs-kafka-ui-reader";
 
 /// The client behind every read-only offset query.
 pub(super) fn consumer_config(cfg: &ClusterConfig) -> Result<ClientConfig, DriverError> {
+    consumer_config_for(cfg, READER_GROUP)
+}
+
+/// The same consumer settings under an explicit group id, for the calls that must
+/// speak for a named group rather than for this driver's read-only reader (T075b).
+pub(super) fn consumer_config_for(
+    cfg: &ClusterConfig,
+    group_id: &str,
+) -> Result<ClientConfig, DriverError> {
     let mut conf = super::config::client_config(cfg)?;
-    conf.set("group.id", READER_GROUP)
+    conf.set("group.id", group_id)
         .set("enable.auto.commit", "false")
         .set("enable.partition.eof", "true");
     for (key, value) in &cfg.extra {
@@ -423,7 +432,7 @@ async fn targets(
 
 /// `fetch_watermarks` is blocking, so the whole list is collected inside one hop to
 /// the blocking pool rather than one hop per partition.
-async fn watermarks(
+pub(super) async fn watermarks(
     live: &Live,
     targets: &[TopicPartition],
 ) -> Result<Vec<(i64, i64)>, DriverError> {
