@@ -18,6 +18,7 @@ import { on, type BridgeEvent } from '../bridge/events';
 import { clusters } from '../store/clusters';
 import { ui } from '../store/ui';
 import MessageCell from '../components/MessageCell.vue';
+import EmptyState from '../components/EmptyState.vue';
 import { copyText, downloadJson, renderBytes, type RenderMode } from '../utils/render';
 import type { TopicRow } from '../store/tree';
 
@@ -265,7 +266,8 @@ function fmtTs(ts: number): string {
 <template>
   <section class="max-w-5xl">
     <h2 class="mb-2 text-lg font-semibold">{{ targetCluster ? `消费消息 · ${targetCluster.name}` : '消费消息' }}</h2>
-    <p v-if="!targetCluster" class="text-sm text-slate-500 dark:text-slate-400">未找到已连接集群：请先在集群页连接，或在左侧树中选择一个 topic 节点。</p>
+    <!-- T050b: shared EmptyState when no connected cluster -->
+    <EmptyState v-if="!targetCluster" title="未找到已连接集群" hint="去集群页连接，或在左侧树中选择一个 topic 节点。" />
     <template v-else>
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <label :class="LBL">Topic</label>
@@ -321,7 +323,13 @@ function fmtTs(ts: number): string {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="displayRows.length === 0"><td colspan="6" class="px-2 py-3 text-slate-400 dark:text-slate-500">{{ filterActive ? '无匹配消息' : '暂无消息' }}</td></tr>
+          <tr v-if="displayRows.length === 0">
+            <td colspan="6" class="px-2 py-3">
+              <!-- T050b: pre-subscription empty state; subscribed/filter rows keep old text -->
+              <EmptyState v-if="!subId" title="暂无消息" hint="选择 topic 后点订阅" />
+              <span v-else class="text-slate-400 dark:text-slate-500">{{ filterActive ? '无匹配消息' : '暂无消息' }}</span>
+            </td>
+          </tr>
           <tr v-for="r in displayRows" :key="r.seq" class="border-b border-slate-200 align-top dark:border-slate-700">
             <td class="px-2 py-1 font-mono">{{ r.partition }}</td>
             <td class="px-2 py-1 font-mono">{{ r.offset }}</td>

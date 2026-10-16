@@ -2,7 +2,7 @@
 // T041 app shell: left nav + top bar (status badge, theme toggle) + main view.
 // T042 wired the clusters view in; T043 added the sidebar cluster tree +
 // topic placeholder; T048a wired the groups view in; logs placeholder remains (T049).
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import ClustersView from '../views/ClustersView.vue';
 import ConsumeView from '../views/ConsumeView.vue';
 import GroupsView from '../views/GroupsView.vue';
@@ -42,6 +42,22 @@ const NAV: { view: ViewName; label: string }[] = [
   { view: 'groups', label: '消费组' },
   { view: 'logs', label: '日志' },
 ];
+
+// T050b: Alt+1..N switches views in NAV order. Guards: ignore form fields /
+// contentEditable targets and ctrl/meta combos (also excludes Windows AltGr,
+// which reports ctrlKey+altKey).
+function onKeydown(e: KeyboardEvent): void {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  if (!e.altKey || e.ctrlKey || e.metaKey) return;
+  const idx = Number(e.key) - 1;
+  if (Number.isInteger(idx) && idx >= 0 && idx < NAV.length) {
+    e.preventDefault();
+    setView(NAV[idx].view);
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKeydown));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
 const badgeText = computed(() => {
   if (ui.badgeLoading) return '检查连接中…';
@@ -91,10 +107,11 @@ const badgeText = computed(() => {
         class="flex min-h-0 w-44 shrink-0 flex-col gap-1 border-r border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800"
       >
         <button
-          v-for="item in NAV"
+          v-for="(item, i) in NAV"
           :key="item.view"
           type="button"
           class="rounded px-3 py-2 text-left text-sm"
+          :title="`${item.label}（Alt+${i + 1}）`"
           :class="
             ui.currentView === item.view
               ? 'bg-emerald-600 font-medium text-white'
