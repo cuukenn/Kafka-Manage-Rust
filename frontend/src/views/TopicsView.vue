@@ -159,7 +159,7 @@ onUnmounted(() => off?.());
         </tr>
       </tbody>
     </table>
-    <EmptyState v-if="!loading && rows.length === 0" title="该集群暂无 topic" hint="点击「新建 Topic」创建第一个 topic。" />
+    <EmptyState v-if="targetCluster && !loading && rows.length === 0" title="该集群暂无 topic" hint="点击「新建 Topic」创建第一个 topic。" />
 
     <TopicModal
       v-if="showCreate && targetCluster"
