@@ -8,8 +8,31 @@ import ConsumeView from '../views/ConsumeView.vue';
 import GroupsView from '../views/GroupsView.vue';
 import ProduceView from '../views/ProduceView.vue';
 import TopicsView from '../views/TopicsView.vue';
+import Toast from '../components/Toast.vue';
 import TreeView from '../components/TreeView.vue';
+import { on } from '../bridge/events';
+import { pending } from '../bridge/rpc';
+import { clusters } from '../store/clusters';
+import { push } from '../store/toast';
 import { ui, setView, toggleTheme, type ViewName } from '../store/ui';
+
+// T049a: cluster connect failures surface here (and via TreeView) as the
+// connection.state event; toast them globally. Inline view error bars stay.
+const prevState = new Map<string, string>();
+on('connection.state', (ev) => {
+  const d = ((ev as { payload?: unknown })?.payload ?? {}) as {
+    clusterId?: string;
+    state?: string;
+    reason?: string;
+  };
+  const id = d.clusterId ?? '';
+  const prev = prevState.get(id);
+  prevState.set(id, d.state ?? '');
+  if (d.state === prev) return;
+  const name = clusters.rows.find((r) => r.id === id)?.name ?? id;
+  if (d.state === 'error') push('error', `连接集群「${name}」失败：${d.reason ?? '未知原因'}`);
+  else if (d.state === 'connected') push('info', `已连接：${name}`);
+});
 
 const NAV: { view: ViewName; label: string }[] = [
   { view: 'clusters', label: '集群' },
@@ -44,6 +67,13 @@ const badgeText = computed(() => {
       >
         {{ badgeText }}
       </span>
+      <!-- T049a: pending-RPC spinner next to the connection badge -->
+      <span
+        v-if="pending.count > 0"
+        class="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-600 dark:border-slate-600 dark:border-t-emerald-400"
+        :title="`处理中：${pending.count} 个请求`"
+        aria-label="请求处理中"
+      />
       <button
         type="button"
         class="ml-auto rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
@@ -96,5 +126,8 @@ const badgeText = computed(() => {
         </section>
       </main>
     </div>
+
+    <!-- T049a: global toast stack (bottom-right) -->
+    <Toast />
   </div>
 </template>

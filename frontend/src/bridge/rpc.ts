@@ -3,6 +3,7 @@
 // http://app.localhost by wry's protocol handler, and Chromium rejects
 // absolute app:// fetches. Envelope: request {id,cmd,payload}; response
 // {id,ok,data} | {id,ok:false,error:{kind,message,retryable}}.
+import { reactive } from 'vue';
 
 export interface RpcRequest {
   id: string;
@@ -47,7 +48,13 @@ function nextId(): string {
   return `${Date.now().toString(36)}.${seq.toString(36)}`;
 }
 
+// T049a: in-flight RPC count (reactive); Shell topbar spinner shows when > 0.
+export const pending = reactive({ count: 0 });
 export async function rpc<T = unknown>(cmd: string, payload?: unknown): Promise<T> {
+  pending.count += 1;
+  try { return await rpcInner<T>(cmd, payload); } finally { pending.count -= 1; }
+}
+async function rpcInner<T>(cmd: string, payload?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch('/rpc', {
