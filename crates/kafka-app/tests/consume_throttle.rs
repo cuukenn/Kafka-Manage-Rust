@@ -133,9 +133,12 @@ fn message_offset(ev: &AppEvent) -> Option<i64> {
 async fn burst_fast_subscriber_loses_nothing() {
     let h = harness("burst", 8192).await;
     h.produce(0, 5000).await;
-    let id = h.start_follow().await;
 
+    // Subscribe BEFORE the pump starts: a broadcast receiver only sees events
+    // published after it attaches, so a late subscribe could miss the first
+    // offsets and hang the drain below.
     let mut rx = h.bus.subscribe();
+    let id = h.start_follow().await;
     let mut expected_offset = 0i64;
     while expected_offset < 5000 {
         let ev = tokio::time::timeout(Duration::from_secs(30), rx.recv())

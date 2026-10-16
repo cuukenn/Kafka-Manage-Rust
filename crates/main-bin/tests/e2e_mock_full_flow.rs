@@ -2,10 +2,12 @@
 //! router — the exact path a WebView request takes:
 //! `rpc closure → parse → command table → handler → service → event bus → serialized response`.
 //!
-//! Nothing here calls a handler function or a service method directly: every step is one
-//! JSON request in and one JSON envelope out, so the test pins the cross-domain contract
-//! (command names, payload shapes, response shapes, event names and ordering, and that a
-//! failed command leaves global state untouched).
+//! Every *driving* step is one JSON request in and one JSON envelope out — no handler or
+//! service method is called to make anything happen — so the test pins the cross-domain
+//! contract (command names, payload shapes, response shapes, event names and ordering, and
+//! that a failed command leaves global state untouched). Three read-only `App` accessors
+//! (`consume().active_count()`, `clusters().driver()`) are used only for end-state
+//! invariants that the wire does not expose.
 //!
 //! `main-bin` is the only crate that assembles all six command tables plus `App`, so the
 //! test lives here and compiles `glue.rs` into this test crate through `#[path]` — the same

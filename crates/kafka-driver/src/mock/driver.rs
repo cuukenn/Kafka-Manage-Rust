@@ -309,12 +309,11 @@ impl KafkaDriver for MockKafkaDriver {
     }
 
     async fn cluster_info(&self) -> Result<ClusterInfo, DriverError> {
+        self.require_connected().await?;
+        // Faults apply here like any other operation, so a test can drive a
+        // connection-class `cluster_info` failure through the real reporting path.
+        self.apply_faults("cluster_info").await?;
         let state = self.state.read().await;
-        if !state.connected {
-            return Err(DriverError::NotConnected(
-                state.config.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "mock".into()),
-            ));
-        }
         Ok(ClusterInfo {
             cluster_id: Some(state.cluster_id.clone()),
             controller_id: Some(state.controller_id),

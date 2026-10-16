@@ -254,8 +254,9 @@ async fn only_connection_class_failures_start_supervision() {
 
 /// The real `cluster.info` call path is wired to the same seam: a cluster with no
 /// live driver fails `not_connected` before any driver call, so it must neither
-/// degrade nor start a supervisor. A connection-class `cluster_info` failure is
-/// not reachable through the mock, which injects faults on data operations only.
+/// degrade nor start a supervisor. (The connection-class branch — `info` reaching
+/// the driver and reporting its error — is pinned by
+/// `info_reports_a_connection_class_failure_into_supervision` below.)
 #[tokio::test(start_paused = true)]
 async fn info_without_a_live_driver_does_not_supervise() {
     let (svc, _store, bus) = harness();
@@ -266,4 +267,46 @@ async fn info_without_a_live_driver_does_not_supervise() {
     assert_eq!(err.kind(), ErrorKind::NotConnected);
     assert!(connection_states(&settle(&mut rx).await).is_empty(), "no degrade without a live driver");
     assert_eq!(svc.state_of(&id), ConnectionState::Disconnected);
+}
+
+/// The connection-class branch of the same path: a live driver whose `cluster_info`
+/// fails with a connection-class error must surface that error AND be reported
+/// through the reconnect seam (degraded + supervision). This is the only production
+/// wiring of the T062 feature, so it is pinned here rather than only via the public
+/// `report_driver_error` seam.
+#[tokio::test(start_paused = true)]
+async fn info_reports_a_connection_class_failure_into_supervision() {
+    let (svc, _store, bus) = harness();
+    let mut rx = bus.subscribe();
+    let id = save_mock(&svc, "mock-info-fault").await;
+    svc.connect(&id).await.expect("connect");
+    drain(&mut rx);
+
+    let driver = svc.driver(&id).expect("live driver handle");
+    let mock = driver
+        .as_any()
+        .and_then(|any| any.downcast_ref::<MockKafkaDriver>())
+        .expect("mock seam reachable through the guard");
+    mock.set_faults(FaultInjection {
+        fail_probability: 1.0,
+        fail_operation: Some("cluster_info".into()),
+        fail_message: "injected cluster_info loss".into(),
+        ..Default::default()
+    })
+    .await;
+
+    let err = svc.info(&id).await.expect_err("the injected cluster_info failure must surface");
+    assert!(
+        matches!(err.kind(), ErrorKind::Connection | ErrorKind::Timeout),
+        "info must surface a connection-class error, got {:?}",
+        err.kind()
+    );
+
+    let states = connection_states(&settle(&mut rx).await);
+    assert!(
+        states.contains(&ConnectionState::Degraded),
+        "a connection-class info failure must degrade the cluster: {states:?}"
+    );
+
+    svc.disconnect(&id).await.expect("cancel the supervisor");
 }
