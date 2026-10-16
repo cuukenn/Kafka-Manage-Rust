@@ -4,6 +4,7 @@
 // topic placeholder; groups/logs placeholders remain (T048/T049).
 import { computed } from 'vue';
 import ClustersView from '../views/ClustersView.vue';
+import ConsumeView from '../views/ConsumeView.vue';
 import ProduceView from '../views/ProduceView.vue';
 import TopicsView from '../views/TopicsView.vue';
 import TreeView from '../components/TreeView.vue';
@@ -12,6 +13,7 @@ import { ui, setView, toggleTheme, type ViewName } from '../store/ui';
 const NAV: { view: ViewName; label: string }[] = [
   { view: 'clusters', label: '集群' },
   { view: 'produce', label: '生产' },
+  { view: 'consume', label: '消费' },
   { view: 'groups', label: '消费组' },
   { view: 'logs', label: '日志' },
 ];
@@ -83,6 +85,7 @@ const badgeText = computed(() => {
         <TopicsView v-if="ui.currentView === 'clusters' && ui.selectedTopic" />
         <ClustersView v-else-if="ui.currentView === 'clusters'" />
         <ProduceView v-else-if="ui.currentView === 'produce'" />
+        <ConsumeView v-else-if="ui.currentView === 'consume'" />
         <section v-else-if="ui.currentView === 'groups'">
           <h2 class="mb-2 text-lg font-semibold">消费组</h2>
           <p class="text-sm text-slate-500 dark:text-slate-400">
