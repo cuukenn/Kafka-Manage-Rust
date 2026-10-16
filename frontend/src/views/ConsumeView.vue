@@ -78,7 +78,7 @@ function decodeBytes(bytes: number[] | null): { text: string; isUtf8: boolean; s
 
 function onMessage(e: BridgeEvent): void {
   const p = e.payload as { subscriptionId?: string; message?: MessageEventDto } | undefined;
-  if (!p || !p.message || p.subscriptionId !== subId.value) return;
+  if (!p || !p.message || p.subscriptionId !== subId.value || subDone.value) return; // done → stop appending
   const m = p.message;
   const key = decodeBytes(m.key ?? null);
   const val = decodeBytes(m.value ?? []);
@@ -99,6 +99,31 @@ async function unsubscribe(): Promise<void> {
   } catch {
     // Already gone server-side (bounded read finished); nothing to do.
   }
+}
+
+// ---- T046c server-side subscription events (badge truth) ----
+// Wire facts (grep-verified, kafka-app bus.rs:68-81 + SubscriptionStatus bus.rs:28-35 snake_case):
+//  - "subscription.state" payload {subscriptionId, state: "running"|"paused"|"done", reason?}
+//  - "subscription.done" payload {subscriptionId, delivered: number, reason?}
+// Bounded (follow=false) reads auto-stop server-side: done is the truth, no user action needed.
+const subDone = ref(false);
+
+function markDone(): void {
+  subDone.value = true;
+  subState.value = 'done';
+}
+
+function onSubState(e: BridgeEvent): void {
+  const p = e.payload as { subscriptionId?: string; state?: string } | undefined;
+  if (!p || p.subscriptionId !== subId.value) return;
+  if (p.state === 'done') markDone();
+  else if (p.state) subState.value = p.state;
+}
+
+function onSubDone(e: BridgeEvent): void {
+  const p = e.payload as { subscriptionId?: string } | undefined;
+  if (!p || p.subscriptionId !== subId.value) return;
+  markDone();
 }
 
 // ---- T046b controls: pause / resume / seek ----
@@ -165,6 +190,7 @@ async function subscribe(): Promise<void> {
       clusterId: cluster.id, topic: topicName.value, start, follow: follow.value,
     });
     rows.value = [];
+    subDone.value = false;
     subId.value = info.subscriptionId;
     subState.value = info.state ?? 'running';
   } catch (e) {
@@ -175,14 +201,20 @@ async function subscribe(): Promise<void> {
 }
 
 let offMessage: (() => void) | null = null;
+let offSubState: (() => void) | null = null;
+let offSubDone: (() => void) | null = null;
 watch(() => targetCluster.value?.id, () => void loadTopics());
 onMounted(() => {
   if (ui.selectedTopic && !topicName.value) topicName.value = ui.selectedTopic.topic;
   void loadTopics();
   offMessage = on('message.received', onMessage);
+  offSubState = on('subscription.state', onSubState);
+  offSubDone = on('subscription.done', onSubDone);
 });
 onBeforeUnmount(() => {
-  offMessage?.(); // drop the event handler with the view
+  offMessage?.(); // drop the event handlers with the view
+  offSubState?.();
+  offSubDone?.();
   void unsubscribe(); // leave page -> no leaked subscription
 });
 
@@ -217,13 +249,14 @@ function fmtTs(ts: number): string {
         <span v-if="subId" class="text-xs text-slate-500 dark:text-slate-400">订阅 {{ subId }} · {{ subState }} · {{ rows.length }} 条</span>
       </div>
       <div v-if="subId" class="mb-3 flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
-        <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="subState === 'paused' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'">{{ subState }}</span>
-        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || subState !== 'running'" @click="setPaused(true)">暂停</button>
-        <button type="button" class="rounded border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" :disabled="controlBusy || subState !== 'paused'" @click="setPaused(false)">恢复</button>
+        <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="subDone ? 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400' : subState === 'paused' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'">{{ subDone ? '已结束' : subState }}</span>
+        <span v-if="subDone" class="text-xs font-medium text-slate-500 dark:text-slate-400">订阅已结束</span>
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || subDone || subState !== 'running'" @click="setPaused(true)">暂停</button>
+        <button type="button" class="rounded border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" :disabled="controlBusy || subDone || subState !== 'paused'" @click="setPaused(false)">恢复</button>
         <label :class="`${LBL} ml-2`">Seek</label>
-        <input v-model="seekPartition" type="number" min="0" placeholder="partition" :class="`${INP} w-24`" />
-        <input v-model="seekOffset" type="number" min="0" placeholder="offset" :class="`${INP} w-28`" />
-        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || seekOffset === ''" @click="seek">确认</button>
+        <input v-model="seekPartition" type="number" min="0" placeholder="partition" :class="`${INP} w-24`" :disabled="subDone" />
+        <input v-model="seekOffset" type="number" min="0" placeholder="offset" :class="`${INP} w-28`" :disabled="subDone" />
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700" :disabled="controlBusy || subDone || seekOffset === ''" @click="seek">确认</button>
       </div>
       <p v-if="subError" class="mb-2 rounded bg-rose-100 px-3 py-2 text-xs text-rose-800 dark:bg-rose-900 dark:text-rose-200">{{ subError }}</p>
       <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">消息（最新在上，上限 {{ MAX_ROWS }}）</p>
