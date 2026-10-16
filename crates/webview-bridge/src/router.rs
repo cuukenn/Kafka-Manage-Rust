@@ -1,9 +1,13 @@
 //! Transport-agnostic command router: raw JSON string in, `ResponseEnvelope` out.
 //! Pipeline: parse envelope → command table → async handler → response. No IO,
 //! no tao/wry, no real `App` — wiring the facade is T033+.
+//!
+//! T082a bounds every request with a global deadline: a handler that hangs must
+//! not hold the request open forever and freeze the UI's pending counter.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use futures::future::BoxFuture;
 use kafka_core::protocol::{ErrorDto, RequestEnvelope, ResponseEnvelope};
@@ -18,16 +22,36 @@ pub type Handler =
 type Table = HashMap<String, Handler>;
 type ParseError = (String, ErrorDto);
 
+/// How long one request may run before the router answers `timeout` and aborts
+/// the handler (T082a). The driver keeps its own per-operation deadlines well
+/// below this, so this is a backstop against a handler that should not hang --
+/// not the normal path.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// The command table. `Clone` (state behind `Arc`) so the event loop and the
 /// tests can hold independent handles to the same routing state.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Router {
     handlers: Arc<RwLock<Table>>,
+    timeout: Duration,
+}
+
+impl Default for Router {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Router {
+    /// A router with `DEFAULT_TIMEOUT`.
     pub fn new() -> Self {
-        Self::default()
+        Self { handlers: Arc::new(RwLock::new(Table::new())), timeout: DEFAULT_TIMEOUT }
+    }
+
+    /// Override the global deadline (T082a): `Router::new().with_timeout(..)`.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Register `handler` for `cmd`. Duplicate registration overrides (last wins).
@@ -57,14 +81,21 @@ impl Router {
         // The handler runs on a spawned task as a panic boundary: a panicking
         // handler must not unwind through `Handle::block_on` in the wry
         // protocol callback and kill the app — its JoinError becomes an
-        // Internal error response instead.
-        let result = match tokio::spawn(handler(payload)).await {
-            Ok(result) => result,
-            Err(join_err) => {
+        // Internal error response instead. T082a stops waiting on that same
+        // handle after `self.timeout` and aborts it.
+        let mut task = tokio::spawn(handler(payload));
+        let result = match tokio::time::timeout(self.timeout, &mut task).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(join_err)) => {
                 return ResponseEnvelope::err_dto(
                     id,
                     ErrorDto::new(ErrorKind::Internal, format!("handler panicked: {join_err}")),
                 );
+            }
+            Err(_elapsed) => {
+                task.abort();
+                let error = deadline(&cmd, self.timeout);
+                return ResponseEnvelope::err_dto(id, error);
             }
         };
         match result {
@@ -72,6 +103,14 @@ impl Router {
             Err(error) => ResponseEnvelope::err_dto(id, error),
         }
     }
+}
+
+/// `timeout` DTO for a request the router cut off (T082a, R81).
+fn deadline(cmd: &str, timeout: Duration) -> ErrorDto {
+    ErrorDto::new(
+        ErrorKind::Timeout,
+        format!("request '{cmd}' exceeded the {} ms deadline", timeout.as_millis()),
+    )
 }
 
 /// Two-stage envelope parse. Stage 1: JSON syntax (bad JSON → `id = ""`).
