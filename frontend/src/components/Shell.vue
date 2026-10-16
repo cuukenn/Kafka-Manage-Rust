@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // T041 app shell: left nav + top bar (status badge, theme toggle) + main view.
 // T042 wired the clusters view in; T043 added the sidebar cluster tree +
-// topic placeholder; groups/logs placeholders remain (T048/T049).
+// topic placeholder; T048a wired the groups view in; logs placeholder remains (T049).
 import { computed } from 'vue';
 import ClustersView from '../views/ClustersView.vue';
 import ConsumeView from '../views/ConsumeView.vue';
+import GroupsView from '../views/GroupsView.vue';
 import ProduceView from '../views/ProduceView.vue';
 import TopicsView from '../views/TopicsView.vue';
 import TreeView from '../components/TreeView.vue';
@@ -86,12 +87,7 @@ const badgeText = computed(() => {
         <ClustersView v-else-if="ui.currentView === 'clusters'" />
         <ProduceView v-else-if="ui.currentView === 'produce'" />
         <ConsumeView v-else-if="ui.currentView === 'consume'" />
-        <section v-else-if="ui.currentView === 'groups'">
-          <h2 class="mb-2 text-lg font-semibold">消费组</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            消费组页将在 T048 落地；当前外壳仅占位。
-          </p>
-        </section>
+        <GroupsView v-else-if="ui.currentView === 'groups'" />
         <section v-else>
           <h2 class="mb-2 text-lg font-semibold">日志</h2>
           <p class="text-sm text-slate-500 dark:text-slate-400">
