@@ -161,8 +161,9 @@ pub(super) async fn assemble(
 ///
 /// Only entries that were actually overridden are kept (R34): `!is_default` drops
 /// everything still at its Kafka default, and sensitive values never leave the
-/// broker.
-async fn overridden_configs(
+/// broker. Shared with the config writer in [`super::admin`], which needs the
+/// current overrides as the base of its non-incremental replace (R37).
+pub(super) async fn overridden_configs(
     live: &Live,
     names: &[&str],
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, DriverError> {

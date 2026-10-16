@@ -77,7 +77,8 @@
   真集群实测 connect/cluster_info/disconnect 通过）。**T071 按 250 行上限拆成 T071a/T071b**：T071a（会话脚手架
   `Live`/`fetch_metadata` + `list_topics`）已 ✅，T071b（`describe_topics`：分区明细 + 起止位点 + 只回被覆盖的
   配置）已 ✅；**T072 同样按 250 行上限拆成 T072a/T072b**：T072a（`create_topic` / `delete_topics` + admin 脚手架）
-  已 ✅，下一步 T072b（`update_topic_config`：先读回被覆盖项，合并后整体替换）。
+  已 ✅，**T072b（`update_topic_config`：先读回被覆盖项、合并后整体替换）已 ✅**；下一步 T073（produce）。
+
 ---
 
 ## 2. 任务索引
@@ -199,7 +200,7 @@
 | T071a | real：每操作会话脚手架 + `list_topics` | T070 | 真集群手动清单 | ✅（92 行/2 文件；check+clippy 绿；Docker Kafka 实测 list_topics 出 t071-demo internal=false 3 分区 rf=1 与 __consumer_offsets internal=true 50 分区；断开 → NotConnected；R33/R35） |
 | T071b | real：`describe_topics`（分区明细 + 起止位点 + 配置） | T071a | 真集群手动清单 | ✅（212 行/2 文件；check+clippy 绿；Docker Kafka 实测 3 分区 leader/副本/ISR、空 topic low==high==0、生产后高水位 1、点名 nope → TopicNotFound、include_internal 切换、显式点名 internal 放行、只回被覆盖配置；R34/R36） |
 | T072a | real：create / delete topic | T071b | 真集群手动清单 | ✅（193 行/3 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测建 3 分区 rf=1 带 retention.ms、重复建 → AlreadyExists、一次删三名逐项汇报（成功 / `unknown topic` / 拒绝 internal）、broker 侧 `--list` 复核已消失；R38/R40） |
-| T072b | real：update topic config（合并后整体替换） | T072a | 真集群手动清单 | ⏸ |
+| T072b | real：update topic config（合并后整体替换） | T072a | 真集群手动清单 | ✅（94 行/3 文件；check+clippy 绿；mock 72/72；Docker Kafka 实测双项写入、只写一项时另一项保留、unset 单项/全部、不存在的主题 → NotFound、空名 → InvalidConfig，并用 `kafka-configs.sh --describe` 复核；R37/R39/R41） |
 | T073 | real：produce（批量 + 回执） | T070 | 真集群手动清单 | ⏸ |
 | T074 | real：subscribe 流 + list_offsets | T073 | 真集群手动清单 | ⏸ |
 | T075 | real：消费组 + reset/commit 位点 | T071 | 真集群手动清单 | ⏸ |

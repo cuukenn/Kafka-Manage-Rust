@@ -3,9 +3,9 @@
 //! T070 lands the skeleton: config mapping (see [`config`]) and the connection
 //! lifecycle (`connect`/`disconnect`/`is_connected`/`cluster_info`). T071a adds
 //! `list_topics` and the per-operation session plumbing, T071b adds
-//! `describe_topics` (see [`topic`]), T072a adds topic create/delete (see
-//! [`admin`]). The remaining domain methods answer `Unsupported` until
-//! T072b–T076 fill them in, so each of those cards is gated by the same
+//! `describe_topics` (see [`topic`]), T072a adds topic create/delete and T072b the
+//! config writer (see [`admin`]). The remaining domain methods answer `Unsupported`
+//! until T073–T076 fill them in, so each of those cards is gated by the same
 //! `cargo check --features real`.
 //!
 //! librdkafka's client API is blocking, so calls from here run in `spawn_blocking`.
@@ -210,8 +210,8 @@ impl KafkaDriver for RealKafkaDriver {
         self.real_delete_topics(req).await
     }
 
-    async fn update_topic_config(&self, _req: &UpdateTopicConfigReq) -> Result<(), DriverError> {
-        Err(self.require_unsupported("update_topic_config lands in T072b"))
+    async fn update_topic_config(&self, req: &UpdateTopicConfigReq) -> Result<(), DriverError> {
+        self.real_update_topic_config(req).await
     }
 
     async fn list_offsets(&self, _req: &ListOffsetsReq) -> Result<Vec<OffsetRange>, DriverError> {
@@ -254,6 +254,7 @@ impl KafkaDriver for RealKafkaDriver {
     fn capabilities(&self) -> DriverCapabilities {
         DriverCapabilities {
             admin_api: true,
+            topic_config_write: true,
             ..DriverCapabilities::default()
         }
     }
