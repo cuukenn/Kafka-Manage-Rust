@@ -238,8 +238,8 @@ impl KafkaDriver for RealKafkaDriver {
         self.real_produce(req).await
     }
 
-    async fn subscribe(&self, _req: SubscribeReq) -> Result<MessageStream, DriverError> {
-        Err(self.require_unsupported("subscribe lands in T074"))
+    async fn subscribe(&self, req: SubscribeReq) -> Result<MessageStream, DriverError> {
+        self.real_subscribe(req).await
     }
 
     async fn list_consumer_groups(&self) -> Result<Vec<GroupInfo>, DriverError> {
