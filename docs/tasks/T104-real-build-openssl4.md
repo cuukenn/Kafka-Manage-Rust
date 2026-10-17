@@ -48,6 +48,11 @@
 - **R111** 不靠改依赖绕过（不开 rdkafka 的 vendored/自建 OpenSSL，也不 hack
   `-DOPENSSL_NO_ENGINE`）：这是宿主工具链选择问题，装上 openssl@3 即可解；改依赖会
   显著拖慢首次构建并改变 CI 的形态，收益不成比例。
+- **R112** 第二轮把「裸命令」也修好：把这两行环境变量钉进**机器级** `~/.cargo/config.toml`
+  的 `[env]`（本机此前不存在该文件），使 `cargo run -p main-bin --features real` 直接可用。
+  `[env]` 默认 `force = false`：显式设置的环境变量仍然优先，CI runner 自带的值也不会被覆盖，
+  故与 R110 拒绝「仓库级 `.cargo/config.toml`」并不矛盾——仓库级的会污染 Linux CI，
+  用户级的只作用于本机。
 
 ## 验收
 
@@ -71,3 +76,20 @@
   `Compiling openssl-sys` / `rdkafka-sys`（说明缓存确实按环境变量失效重链）、
   `Finished dev profile`、**退出码 0**；同一条件下不经脚本的裸 cargo 为 **101**。
 - **预算**：仅 `README.md`（文档）+ `scripts/real-run.sh`（脚本）+ 本卡，源码 **0 行**。
+
+## 后续（第二轮：裸命令也要能编译）
+
+用户反馈「`cargo run -p main-bin --features real` 无法编译」。复现确认是**同一个根因**
+（链接参数里是 `-L /opt/homebrew/opt/openssl@4/lib`，报 `_ENGINE_by_id` undefined，退出码 101）——
+脚本可用，但没有人会记得先套脚本。故按 R112 补做：
+
+- 新建 `~/.cargo/config.toml`（本机此前没有该文件），`[env]` 钉住 `OPENSSL_DIR` /
+  `PKG_CONFIG_PATH` 指向 keg-only 的 `openssl@3`。
+- 验证（`PKG_CONFIG_PATH` / `OPENSSL_DIR` 全部 unset）：
+  - `cargo build -p main-bin --features real` → **退出码 0**（此前同一条件下为 101）；
+  - `cargo run -p main-bin --features real` → 编译成功**并起窗**，stderr 打印
+    `local store opened …/rs-kafka-ui-client/data.db`、
+    `router ready: cluster/config/topic+produce/consume/group/mock registered`、
+    `event pump online` —— real 驱动确实编进来了（也是本机首次真正跑起这个应用）。
+- 该改动位于 `$HOME/.cargo/`，**不在仓库内**：不进版本库、不占预算、不影响 CI；README 已把
+  它写成「嫌每次导出麻烦」的一次性方案，`scripts/real-run.sh` 保留给换机器/换平台的场景。

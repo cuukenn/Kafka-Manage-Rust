@@ -124,6 +124,17 @@ export PKG_CONFIG_PATH="$OPENSSL_DIR/lib/pkgconfig"
 cargo run -p main-bin --features real
 ```
 
+嫌每次导出麻烦，就把它钉在**机器级**（`~/.cargo/config.toml`）。它只影响本机的 cargo 构建，且 `force` 默认为 `false`——已显式设置的环境变量仍然优先，CI runner 自带的值也不会被覆盖：
+
+```toml
+# ~/.cargo/config.toml
+[env]
+OPENSSL_DIR = "/opt/homebrew/opt/openssl@3"
+PKG_CONFIG_PATH = "/opt/homebrew/opt/openssl@3/lib/pkgconfig"
+```
+
+这样裸 `cargo run -p main-bin --features real` 就能直接编译运行，不必再记脚本或环境变量。
+
 ⚠️ `cargo check` 不链接，所以在上面环境缺失时它照样「通过」——只有 `cargo build` / `cargo run` 会暴露这个链接错误。
 
 没开 `real` 时非 mock 集群不会崩，而是给出明确错误：`real Kafka driver is not compiled in; rebuild with --features real`。

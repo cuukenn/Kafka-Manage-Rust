@@ -81,7 +81,7 @@
 - ✅ **本机 CI 等价门禁全绿（2026-10-17 收官扫描）**：`cargo test -q --workspace` → **281 passed**；`cargo clippy -q --workspace --all-targets -- -D warnings` → **零告警**；`cargo build --release -p main-bin` → `Finished release profile in 7.70s`；`cargo check -p kafka-driver --features real` → `Finished dev profile`；`cargo bench -p kafka-driver` → 两组数字；`frontend` 在 Node 22（v22.23.3）下 `npm run build` → `✓ built in 646ms`，且 `frontend/dist` 未产生字节变化（构建可复现）。**CI 本身仍未在托管 runner 上执行过**（本机无法触发），T092 卡片里那条诚实备注不变。
 
 - ✅ **T103（阶段 10 · 文档补遗，2026-10-17）**：README 原本只讲构建与前置、从没说怎么把程序跑起来，补 `## 运行`（4 条路径：`cargo run -p main-bin`、`KAFKA_UI_DEV_DIR` + Node 22 免重编译、`--features real` + macOS openssl、docker compose broker）；同时修掉两个前置引用被空行切碎、代码块里的 `\#` 转义与 4 处标题后多余空行。仅动 `README.md`，R108–R109。
-- ✅ **T104（阶段 10 · 文档补遗，2026-10-17）**：用户报「无法编译 real」。复现并定位为**宿主 OpenSSL 版本**：Homebrew 默认 `openssl` 已指向 openssl@4 4.0.3，而 OpenSSL 4 不再导出 ENGINE API，vendored librdkafka 2.12.1 仍调用 `ENGINE_by_id` 等 5 个符号，链接阶段 `Undefined symbols`（退出码 101）；`openssl@3`（3.5.9）已装但 keg-only，pkg-config 默认找不到。新增 `scripts/real-run.sh`（`brew --prefix openssl@3` → 导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH` → `exec cargo "$@"`）并重写 README「运行」一节的 real 段（根因 + 脚本入口 + 手动等价命令 + 「`cargo check` 不链接」警告）。仅动文档与脚本，源码 0 行；R110（不提交 `.cargo/config.toml` 的 `[env]`，否则 Linux runner 会因该绝对路径失败）、R111（不改依赖绕过）。
+- ✅ **T104（阶段 10 · 文档补遗，2026-10-17）**：用户报「无法编译 real」。复现并定位为**宿主 OpenSSL 版本**：Homebrew 默认 `openssl` 已指向 openssl@4 4.0.3，而 OpenSSL 4 不再导出 ENGINE API，vendored librdkafka 2.12.1 仍调用 `ENGINE_by_id` 等 5 个符号，链接阶段 `Undefined symbols`（退出码 101）；`openssl@3`（3.5.9）已装但 keg-only，pkg-config 默认找不到。新增 `scripts/real-run.sh`（`brew --prefix openssl@3` → 导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH` → `exec cargo "$@"`）并重写 README「运行」一节的 real 段（根因 + 脚本入口 + 手动等价命令 + 「`cargo check` 不链接」警告）。仅动文档与脚本，源码 0 行；R110（不提交 `.cargo/config.toml` 的 `[env]`，否则 Linux runner 会因该绝对路径失败）、R111（不改依赖绕过）。第二轮把裸命令也修好：机器级 `~/.cargo/config.toml` 的 `[env]` 钉住 `OPENSSL_DIR` / `PKG_CONFIG_PATH`（R112；`force` 默认 false，不覆盖显式值与 CI）；验证在两者全 unset 时 `cargo build -p main-bin --features real` 退出码 0，`cargo run -p main-bin --features real` 成功起窗。
 
 ---
 
@@ -250,7 +250,7 @@
 | ID | 任务 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T103 | README 补「运行」章节 + 修前置块排版 | 无 | 文档 | ✅（仅 README.md；新增 4 条运行路径，修掉被切碎的两个前置引用与 `\#` 转义残留；R108–R109） |
-| T104 | `--features real` 链接失败：Homebrew openssl@4 缺 ENGINE API | 无 | 手动（`scripts/real-run.sh build -p main-bin --features real`） | ✅（仅 README.md + scripts/real-run.sh；默认 pkg-config 已是 openssl@4 4.0.3 且不导出 `_ENGINE_*`，vendored librdkafka 2.12.1 仍调用 → 链接 101；脚本定位 keg-only openssl@3 后退出码 0；R110–R111） |
+| T104 | `--features real` 链接失败：Homebrew openssl@4 缺 ENGINE API | 无 | 手动（`scripts/real-run.sh build -p main-bin --features real`） | ✅（仅 README.md + scripts/real-run.sh；默认 pkg-config 已是 openssl@4 4.0.3 且不导出 `_ENGINE_*`，vendored librdkafka 2.12.1 仍调用 → 链接 101；脚本定位 keg-only openssl@3 后退出码 0，并在机器级 `~/.cargo/config.toml` 钉住 openssl@3 使裸命令直接可编译；R110–R112） |
 
 ---
 
