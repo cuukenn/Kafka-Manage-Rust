@@ -77,14 +77,59 @@ export async function rpc<T = unknown>(cmd: string, payload?: unknown): Promise<
   }
 }
 async function rpcInner<T>(cmd: string, payload?: unknown): Promise<T> {
+  const id = nextId();
+  const controller = new AbortController();
+  inflight.set(id, controller);
+  try {
+    return await rpcSend<T>(id, cmd, payload, controller.signal);
+  } finally {
+    inflight.delete(id);
+  }
+}
+
+// T082c: in-flight requests by envelope id. Dropping one does two things — it
+// posts `request.cancel` (T082b) so the Rust handler is aborted, and it aborts
+// the local fetch so the page stops waiting for an answer nobody wants.
+const inflight = new Map<string, AbortController>();
+
+/** Drop everything still in flight; returns how many were dropped (T082c). */
+export function cancelInflight(): number {
+  const dropped = [...inflight];
+  inflight.clear();
+  for (const [id, controller] of dropped) {
+    controller.abort();
+    // Best effort: the reply races the aborted fetch above and is not awaited.
+    void fetch('/rpc', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: `cancel.${id}`,
+        cmd: 'request.cancel',
+        payload: { id },
+      } satisfies RpcRequest),
+    }).catch(() => {});
+  }
+  return dropped.length;
+}
+
+async function rpcSend<T>(
+  id: string,
+  cmd: string,
+  payload: unknown,
+  signal: AbortSignal,
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch('/rpc', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: nextId(), cmd, payload } satisfies RpcRequest),
+      body: JSON.stringify({ id, cmd, payload } satisfies RpcRequest),
+      signal,
     });
   } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new RpcError('cancelled', `${cmd} was cancelled`, false);
+    }
     throw new RpcError('network', `fetch /rpc failed: ${String(e)}`, true);
   }
   if (!res.ok) {

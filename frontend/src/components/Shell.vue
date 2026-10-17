@@ -12,7 +12,7 @@ import TopicsView from '../views/TopicsView.vue';
 import Toast from '../components/Toast.vue';
 import TreeView from '../components/TreeView.vue';
 import { on } from '../bridge/events';
-import { pending } from '../bridge/rpc';
+import { cancelInflight, pending } from '../bridge/rpc';
 import { clusters } from '../store/clusters';
 import { push } from '../store/toast';
 import { ui, setView, toggleTheme, type ViewName } from '../store/ui';
@@ -63,6 +63,14 @@ const badgeText = computed(() => {
   if (ui.badgeLoading) return '检查连接中…';
   return ui.connectedCluster ? `已连接：${ui.connectedCluster}` : '未连接';
 });
+
+// T082c: the way out of a request that is taking too long. The runners-up are
+// T082a's 30 s deadline on the Rust side and the views' own refresh guards;
+// this one is the user's own decision, so it says how many it dropped.
+function onCancel(): void {
+  const dropped = cancelInflight();
+  if (dropped > 0) push('info', `已取消 ${dropped} 个在途请求`);
+}
 </script>
 
 <template>
@@ -91,6 +99,16 @@ const badgeText = computed(() => {
         :title="`处理中：${pending.count} 个请求`"
         aria-label="请求处理中"
       />
+      <!-- T082c: the user's way out of a slow request (T082b drops it for real) -->
+      <button
+        v-if="pending.count > 0"
+        type="button"
+        class="rounded border border-amber-300 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-200 dark:hover:bg-amber-900"
+        title="取消所有在途请求"
+        @click="onCancel()"
+      >
+        取消
+      </button>
       <button
         type="button"
         class="ml-auto rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
