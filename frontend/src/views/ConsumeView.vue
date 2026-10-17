@@ -41,6 +41,9 @@ const targetCluster = computed(() => {
 const topics = ref<string[]>([]);
 const topicName = ref('');
 const topicsError = ref<string | null>(null);
+// T105: Kafka's own topics (`__consumer_offsets`, …) hold internal records, not
+// business data; the UI says so instead of showing an unexplained empty list.
+const internalTopic = computed(() => topicName.value.startsWith('__'));
 
 async function loadTopics(): Promise<void> {
   const cluster = targetCluster.value;
@@ -49,7 +52,13 @@ async function loadTopics(): Promise<void> {
     const rows = await rpc<TopicRow[]>('topic.list', { clusterId: cluster.id });
     topics.value = (rows ?? []).map((r) => r.name);
     topicsError.value = null;
-    if (!topics.value.includes(topicName.value)) topicName.value = topics.value[0] ?? '';
+    if (!topics.value.includes(topicName.value)) {
+      // T105: `topic.list` order is not guaranteed and a fresh broker only has
+      // internal `__*` topics, so blindly taking the first one makes "订阅" look
+      // broken. Prefer the first user topic and only fall back to the raw list.
+      const userTopics = topics.value.filter((t) => !t.startsWith('__'));
+      topicName.value = userTopics[0] ?? topics.value[0] ?? '';
+    }
   } catch (e) {
     topicsError.value = e instanceof Error ? e.message : String(e);
   }
@@ -355,7 +364,13 @@ function fmtTs(ts: number): string {
             <td colspan="6" class="px-2 py-3">
               <!-- T050b: pre-subscription empty state; subscribed/filter rows keep old text -->
               <EmptyState v-if="!subId" title="暂无消息" hint="选择 topic 后点订阅" />
-              <span v-else class="text-slate-400 dark:text-slate-500">{{ filterActive ? '无匹配消息' : '暂无消息' }}</span>
+              <span v-else-if="filterActive" class="text-slate-400 dark:text-slate-500">无匹配消息</span>
+              <!-- T105: subscribed with nothing to show is the normal state of an
+                   empty topic, not a failure — say so, and name the internal-topic case. -->
+              <span v-else class="text-slate-400 dark:text-slate-500">
+                已订阅，当前没有可读消息：该 topic 暂时是空的，新消息到达会实时出现在这里。
+                <template v-if="internalTopic">这是 Kafka 内部 topic，通常没有业务数据。</template>
+              </span>
             </td>
           </tr>
           <tr v-for="r in displayRows" :key="r.seq" class="border-b border-slate-200 align-top dark:border-slate-700">

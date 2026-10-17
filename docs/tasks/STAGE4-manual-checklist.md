@@ -48,6 +48,8 @@
 28. **T102**：`cargo run -p kafka-driver --example leak_probe -- 5000 50` 应打印 `warmup done … pumps=0`、结尾 `pumps=0 after_disconnect=0 topic_left=false` 且**退出码 0**；再跑 `./scripts/leak-check.sh 20000 50 2` 与 `./scripts/leak-check.sh 40000 50 2`，两轮**末样本 RSS 应接近**（不随轮数翻倍线性增长）、fd 增量不随轮数漂移；数字与判读见 `docs/reports/T102-long-run-leak-report.md`。
 
 29. **T104**：本机已把 OpenSSL 钉在**机器级** `~/.cargo/config.toml` 的 `[env]`（R112），因此在**未导出** `PKG_CONFIG_PATH` / `OPENSSL_DIR` 的干净 shell 里直接跑 `cargo build -p main-bin --features real` 应成功、退出码 0，且 `cargo run -p main-bin --features real` 能正常起窗（stderr 有 `local store opened` / `router ready: …consume/group/mock registered` / `event pump online`）。要复现原始缺陷，就显式压回 openssl@4：`cargo --config 'env.OPENSSL_DIR="/opt/homebrew/opt/openssl@4"' --config 'env.PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@4/lib/pkgconfig"' build -p main-bin --features real` → 应报 `Undefined symbols … _ENGINE_by_id`（退出码 101）。另确认 `cargo check -p kafka-driver --features real` 在**两个**方向上都「通过」（它不链接），故不能拿 check 当 real 可构建的凭据。
+
+30. **T105**：消费页需人工确认两处表达——(a) 主题列表含内部主题（`__consumer_offsets` 等）时，默认选中应落在**非 `__` 开头**的主题上；(b) 订阅一个**空的**主题后，消息表应显示「已订阅，当前没有可读消息：该 topic 暂时是空的…」，而不是只显示「暂无消息」；若手选的是 `__*` 主题，还应追加「这是 Kafka 内部 topic，通常没有业务数据」。想看真实数据：主题页新建一个 topic（如 `demo`）→ 生产页发几条 → 回消费页选 `demo` 订阅，行应实时出现。
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

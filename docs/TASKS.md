@@ -82,6 +82,7 @@
 
 - ✅ **T103（阶段 10 · 文档补遗，2026-10-17）**：README 原本只讲构建与前置、从没说怎么把程序跑起来，补 `## 运行`（4 条路径：`cargo run -p main-bin`、`KAFKA_UI_DEV_DIR` + Node 22 免重编译、`--features real` + macOS openssl、docker compose broker）；同时修掉两个前置引用被空行切碎、代码块里的 `\#` 转义与 4 处标题后多余空行。仅动 `README.md`，R108–R109。
 - ✅ **T104（阶段 10 · 文档补遗，2026-10-17）**：用户报「无法编译 real」。复现并定位为**宿主 OpenSSL 版本**：Homebrew 默认 `openssl` 已指向 openssl@4 4.0.3，而 OpenSSL 4 不再导出 ENGINE API，vendored librdkafka 2.12.1 仍调用 `ENGINE_by_id` 等 5 个符号，链接阶段 `Undefined symbols`（退出码 101）；`openssl@3`（3.5.9）已装但 keg-only，pkg-config 默认找不到。新增 `scripts/real-run.sh`（`brew --prefix openssl@3` → 导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH` → `exec cargo "$@"`）并重写 README「运行」一节的 real 段（根因 + 脚本入口 + 手动等价命令 + 「`cargo check` 不链接」警告）。仅动文档与脚本，源码 0 行；R110（不提交 `.cargo/config.toml` 的 `[env]`，否则 Linux runner 会因该绝对路径失败）、R111（不改依赖绕过）。第二轮把裸命令也修好：机器级 `~/.cargo/config.toml` 的 `[env]` 钉住 `OPENSSL_DIR` / `PKG_CONFIG_PATH`（R112；`force` 默认 false，不覆盖显式值与 CI）；验证在两者全 unset 时 `cargo build -p main-bin --features real` 退出码 0，`cargo run -p main-bin --features real` 成功起窗。
+- ✅ **T105（阶段 11 · 缺陷修复，2026-10-17）**：用户报「真 Kafka 订阅后一行数据都没有」。逐层实测证明通路无缺陷（驱动/router/bus/前端事件桥与 RPC 桥、T077 一致性、T100 E2E 全绿；真驱动下 `message.received` 一律晚于 RPC 回复，故「前端吞首批消息」的竞态被否定），真因是该 broker 上除探针主题外只有一个**空的** `__consumer_offsets`（50 分区、0 条消息），而消费页默认选中主题列表第一个、`topic.list` 又不保证顺序；对空主题 earliest+follow 订阅**正确地**得到 0 行，界面却不给解释。只改 `frontend/src/views/ConsumeView.vue`（+17/−2、1 个源文件）：默认选第一个非 `__` 主题，空态拆成「未订阅 / 已订阅无数据 / 过滤无匹配」三分支并对内部主题点明。R113–R114。
 
 ---
 
@@ -251,6 +252,12 @@
 |---|---|---|---|---|
 | T103 | README 补「运行」章节 + 修前置块排版 | 无 | 文档 | ✅（仅 README.md；新增 4 条运行路径，修掉被切碎的两个前置引用与 `\#` 转义残留；R108–R109） |
 | T104 | `--features real` 链接失败：Homebrew openssl@4 缺 ENGINE API | 无 | 手动（`scripts/real-run.sh build -p main-bin --features real`） | ✅（仅 README.md + scripts/real-run.sh；默认 pkg-config 已是 openssl@4 4.0.3 且不导出 `_ENGINE_*`，vendored librdkafka 2.12.1 仍调用 → 链接 101；脚本定位 keg-only openssl@3 后退出码 0，并在机器级 `~/.cargo/config.toml` 钉住 openssl@3 使裸命令直接可编译；R110–R112） |
+
+### 阶段 11 · 缺陷修复
+
+| 卡 | 主题 | 依赖 | 验证 | 状态 |
+|---|---|---|---|---|
+| T105 | 消费页空态：默认不选内部主题 + 说明「已订阅但没有数据」 | 无 | 手动（`npm run build` + 真 Kafka 订阅观察） | ✅（仅 `ConsumeView.vue` +17/−2；默认落在非 `__` 主题；空态三分支；R113–R114） |
 
 ---
 
