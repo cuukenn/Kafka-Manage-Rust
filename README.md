@@ -94,7 +94,19 @@ frontend/             # Vue3+Vite+Tailwind 源码
 >
 >  not found"。
 
+> **前置（Linux）**
 
+>
+
+> ：需要 WebKitGTK / GTK 开发包，否则 `webview-bridge` 无法编译：
+
+>
+
+> `sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config`
+
+>
+
+> ；启用真实驱动（`--features real`）还需 `cmake` 与 `build-essential`。CI 用的正是这份清单（见 `.github/workflows/ci.yml`）。
 
 ```
 \# 类型检查（kafka-core / kafka-driver，无 rdkafka 依赖）
