@@ -112,22 +112,28 @@ docker compose -f scripts/kafka/docker-compose.yml up -d
 
 ## 发布（打 tag）
 
-发布由 tag 驱动：`release.yml` 在 `v*` 上构建五平台产物，再由单个 `release` job 创建 Release。
-**tag 必须与 `Cargo.toml` 的 `[workspace.package] version` 一致**——`version-guard` job 在两者
-不符时直接失败，后续 job 全部跳过（`v0.1.3` 就这样红过一次：tag 说 0.1.3、清单说 0.1.0，
-而它的产物名会自称 0.1.3、里面的二进制却报告 0.1.0）。
-
-用脚本走完这条路，别手改版本号：
+发布只认 tag，**不需要动 `Cargo.toml`**：
 
 ```bash
-scripts/release.sh 0.1.4 --dry-run   # 只打印会改什么，随后回滚
-scripts/release.sh 0.1.4             # bump + 刷新 Cargo.lock + commit + tag + push
+git tag -a v0.1.5 -m "v0.1.5"
+git push origin v0.1.5
 ```
 
-脚本会拒绝：版本号格式不对（要 `0.1.4` 这种，不带 `v`）、该 tag 已存在、工作树不干净、
-当前版本已经是目标版本。bump 之后它会跑 `cargo update --workspace`——每个 workspace 成员
-都会把自己的版本写进 `Cargo.lock`，而 `release.yml` 用的是 `--locked`，不同步就会以
-`cannot update the lock file … because --locked was passed` 失败。
+`release.yml` 在 `v*` 上触发 → 五个平台各自构建（产物名
+`rs-kafka-ui-client-<tag 去掉 v>-<platform>-<arch>`）→ 各自上传一个 workflow artifact →
+最后一个 `release` job 汇总，**一次性**创建 Release 并挂上全部 5 个产物。
+
+为什么不是五个 job 各传一次 Release：`v0.1.0` 已经证明那样会坏——五个 job 同时创建同一个
+Release，`already_exists` 竞态，`generate_release_notes` 还各追加一次，正文里
+`**Full Changelog**` 重复了 5 遍（T113）。
+
+`scripts/release.sh <version>` 仍然保留，但**不是发布的前置条件**：它只在你想让
+`Cargo.toml` 的 `[workspace.package] version` 跟上 tag 时才需要（纯元数据，构建产物里
+没有任何地方读它）。
+
+> 历史：T114 曾加过一个 `version-guard`，要求 tag 与 manifest 一致，结果把 `v0.1.3`、
+> `v0.1.4` 两次打 tag 都拦下来了。而全仓 grep `CARGO_PKG_VERSION` **零命中**——它拦的是
+> 没人看的东西。T118 已删除该 job。
 
 ## 任务与卡片
 

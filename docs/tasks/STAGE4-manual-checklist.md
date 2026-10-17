@@ -58,7 +58,7 @@
 
 34. **T113**：下一次打 tag 后到 Releases 页确认 —— release **只被创建一次**（不会出现 `already_exists` 导致的产物缺失），正文里 `**Full Changelog**` **只出现一次**（v0.1.0 曾重复 5 次）；五个平台的产物仍齐全；Actions 里能看到 `build` 五个 job 各自上传 artifact、随后 `release` job 汇总发布。本机无法执行 Actions，须在推送后确认。　→ **2026-10-17 v0.1.3 已跑通，见 `docs/tasks/T116-release-acceptance.md`**（五项产物齐全、正文不重复、Linux 两个 job 绿；仅「zip 内含两个 DLL」仍未人工解压确认）。
 
-35. **T114**：下次打 tag 时，若 tag 与 `Cargo.toml` 的 `[workspace.package] version` 不一致（例如 tag `v9.9.9` 而文件里是 `0.1.0`），`release` workflow 应在 **第一个 job `version-guard`** 就红，且 `build`/`release` 一个都不启动（Actions 页看不到五个平台 runner）；tag 与版本一致时照常发布。　→ **2026-10-17 v0.1.3 已跑通，见 `docs/tasks/T116-release-acceptance.md`**（五项产物齐全、正文不重复、Linux 两个 job 绿；仅「zip 内含两个 DLL」仍未人工解压确认）。
+35. **T118**（原 T114，护栏已撤）：**不碰 `Cargo.toml`** 直接打一个 tag 并 push，`release` workflow 应直接开始跑五个平台的 `build`，最终 Release 上出现 5 个产物；不再有任何 job 去校验 tag 与 `[workspace.package] version` 是否一致。（历史：`v0.1.3`/`v0.1.4` 曾因该护栏在第一个 job 就红、五个平台一个都没跑，见 `docs/tasks/T118-drop-version-guard.md`。）
 
 36. **T115**：发布流程改为走 `scripts/release.sh <version>`——先 `--dry-run` 看清会改什么，真跑后本地应多出 `chore(release): vX.Y.Z` 提交与同名 annotated tag，且推送后 `version-guard` job 通过；同时确认 `Cargo.lock` 里五个成员版本与 tag 一致（否则 `--locked` 构建会失败）。另：`v0.1.3` 的 tag 已被重新指向带 0.1.3 版本的提交，Actions 里应有一次新的运行。
 

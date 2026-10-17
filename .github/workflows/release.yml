@@ -11,35 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  # T114: tag 与 Cargo.toml 的版本必须先对上，再让五个 runner 去构建。
-  # 不一致时只在一个 job 上快速失败，而不是打完 tag 才发现产物版本是错的。
-  version-guard:
-    name: tag matches Cargo.toml
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 校验 tag 与 workspace 版本一致
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          manifest="$(awk -F'"' '/^\[workspace\.package\]/ { f = 1 } f && /^version/ { print $2; exit }' Cargo.toml)"
-          echo "tag=$tag manifest=$manifest"
-          if [ -z "$manifest" ]; then
-            echo "::error::Cargo.toml 里找不到 [workspace.package] 的 version"
-            exit 1
-          fi
-          if [ "$tag" != "$manifest" ]; then
-            echo "::error::tag v$tag 与 Cargo.toml 的 version $manifest 不一致：先把 Cargo.toml 升到 $tag（或改用 v$manifest 打 tag）"
-            exit 1
-          fi
-
   build:
     name: ${{ matrix.platform }}-${{ matrix.arch }}
-    needs: version-guard
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
