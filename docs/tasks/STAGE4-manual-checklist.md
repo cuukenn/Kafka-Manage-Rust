@@ -44,6 +44,7 @@
 24. **T082c**：触发一次慢请求（连一个不可达地址的集群，或对超大 topic 列表点刷新），顶栏 spinner 旁出现琥珀色「取消」按钮；按下后 spinner 归零、弹出「已取消 N 个在途请求」、视图的错误条显示 `cancelled`（不是 `network`）；日志面板里对应行是 `rpc failed (cancelled)`。后端兜底另验：把某次请求拖过 30 s（R81）应回 `timeout` 且 UI 不再卡住。
 25. **T083a**：跑起来后 `<data_dir>/logs/` 下出现 `app.log`（macOS 为 `~/Library/Application Support/rs-kafka-ui-client/logs/app.log`），内容与日志面板里 `rust` 来源的行一致（只是带 target/字段的完整形态）；把文件撑过 1 MiB 后应出现 `app.log.1`，且 `.1`/`.2`/`.3` 最多三份滚动文件、`app.log.4` 永不出现；改坏目录权限（或把 `logs` 换成同名普通文件）后启动应**只**降级到 stderr，不弹错、不崩。
 26. **T083b**：日志面板点「导出」→ 得到 `kafka-logs-<YYYYMMDD-HHmmss>.txt`；把级别筛选切到 `error` 再导出，文件里只有 error 行；文件顺序与面板相反（**最旧在前**）、每行是 `[ISO 时间] LEVEL source 内容`；日志为空时「导出」按钮置灰；顺带确认消费页「导出 JSON」仍能下载（T047 那条没被这次重构弄坏）。
+27. **T091**：`KAFKA_UI_FAKE_WEBVIEW2_MISSING=1 cargo run -p main-bin` → stderr 出现「the WebView2 runtime is not installed」+ 下载地址，浏览器自动打开下载页，进程**非零码**退出；去掉该环境变量后一切照旧正常开窗（macOS 上 `is_available()` 恒真）。
 
 ## 记录方式
 

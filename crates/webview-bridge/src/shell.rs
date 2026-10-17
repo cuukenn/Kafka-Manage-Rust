@@ -260,6 +260,9 @@ fn bridge_response(
 /// Create the tao window (1280x800) + wry WebView on the **main thread** and
 /// block until the window is closed (`ControlFlow::Exit`), then return `Ok`.
 pub fn run_window(opts: WindowOptions) -> anyhow::Result<()> {
+    // T091: name the missing runtime and offer the download page instead of
+    // letting the WebView build fail with a bare, unhelpful context string.
+    crate::webview2::preflight()?;
     let WindowOptions { title, page } = opts;
     let mut event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -305,6 +308,8 @@ pub fn run_window_with(
     rpc: RpcHandler,
     on_ready: OnReady,
 ) -> anyhow::Result<()> {
+    // T091: same preflight as `run_window` — this is the path `main` uses.
+    crate::webview2::preflight()?;
     let WindowOptions { title, page } = opts;
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let window = WindowBuilder::new()

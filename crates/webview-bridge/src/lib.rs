@@ -7,3 +7,4 @@ pub mod handlers_topic;
 pub mod pump;
 pub mod router;
 pub mod shell;
+pub mod webview2;
