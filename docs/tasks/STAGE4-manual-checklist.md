@@ -45,6 +45,7 @@
 25. **T083a**：跑起来后 `<data_dir>/logs/` 下出现 `app.log`（macOS 为 `~/Library/Application Support/rs-kafka-ui-client/logs/app.log`），内容与日志面板里 `rust` 来源的行一致（只是带 target/字段的完整形态）；把文件撑过 1 MiB 后应出现 `app.log.1`，且 `.1`/`.2`/`.3` 最多三份滚动文件、`app.log.4` 永不出现；改坏目录权限（或把 `logs` 换成同名普通文件）后启动应**只**降级到 stderr，不弹错、不崩。
 26. **T083b**：日志面板点「导出」→ 得到 `kafka-logs-<YYYYMMDD-HHmmss>.txt`；把级别筛选切到 `error` 再导出，文件里只有 error 行；文件顺序与面板相反（**最旧在前**）、每行是 `[ISO 时间] LEVEL source 内容`；日志为空时「导出」按钮置灰；顺带确认消费页「导出 JSON」仍能下载（T047 那条没被这次重构弄坏）。
 27. **T091**：`KAFKA_UI_FAKE_WEBVIEW2_MISSING=1 cargo run -p main-bin` → stderr 出现「the WebView2 runtime is not installed」+ 下载地址，浏览器自动打开下载页，进程**非零码**退出；去掉该环境变量后一切照旧正常开窗（macOS 上 `is_available()` 恒真）。
+28. **T102**：`cargo run -p kafka-driver --example leak_probe -- 5000 50` 应打印 `warmup done … pumps=0`、结尾 `pumps=0 after_disconnect=0 topic_left=false` 且**退出码 0**；再跑 `./scripts/leak-check.sh 20000 50 2` 与 `./scripts/leak-check.sh 40000 50 2`，两轮**末样本 RSS 应接近**（不随轮数翻倍线性增长）、fd 增量不随轮数漂移；数字与判读见 `docs/reports/T102-long-run-leak-report.md`。
 
 ## 记录方式
 
