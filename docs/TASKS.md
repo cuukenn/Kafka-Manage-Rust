@@ -102,6 +102,7 @@
 - ✅ **T123（阶段 11 · 缺陷修复，2026-10-18）**：T122 的 notice 证明 Strawberry perl 已排在 PATH 最前，但 v0.1.5 第三轮报的错逐字未变 —— 真正跑 `./Configure` 的还是 Git 的 MSYS perl（build 步在 `bash` 下，Git Bash 会把 `/usr/bin` 再插到最前）。改走上游的显式入口 `OPENSSL_SRC_PERL`（`openssl-src src/lib.rs:158`），并把 annotation 改成报「真正被用的值」。R157–R158。
 - ✅ **T124（阶段 11 · 缺陷修复，2026-10-18）**：v0.1.5 第四轮四平台全绿、Windows 仍红，但失败点已前移：T123 的 perl 修复生效（perl 报错整段消失），撞到 `CMake Error: Could not create named generator Visual Studio 18 2026` —— 那串名字是 `cmake-0.1.58` 给 `VsVers::Vs18` 起的（`src/lib.rs:962-980`），runner 的 CMake 不认；本机 CMake 4.4.4 复现出同一形状。改成 env 显式钉 `CMAKE_GENERATOR=NMake Makefiles`（crate 在 MSVC 下明确支持它，此时不塞 `-Thost/-A`），并把失败上报从「尾部 25 行」改成「按关键字挑行」。R159–R160。
 - ✅ **T125（阶段 11 · 发布验收，2026-10-18）**：`v0.1.5` 第五轮（run 39057524891）**六个 job 全绿** —— `linux-x86_64` / `linux-aarch64` / `macos-x86_64` / `macos-arm64` / `windows-x86_64` / `publish release` 全 success，Release `v0.1.5` 挂上 **5 个产物**（4 个 `.tar.gz` + 1 个 `.zip`），命名即 `名称-版本号-<target 三元组>.<格式>`，正文 `Full Changelog` 只出现 1 次（T113 的单点发布结构成立）。T119→T124 这条 Windows 修复链到此闭环：链接器、perl、CMake 生成器三层各修一层，每层都由上一轮的 annotation 证明生效。
+- ✅ **T126（阶段 11 · 缺陷修复，2026-10-18）**：用户看完成品说「解压产物名称不对，应该为名称_版本.产物平台格式」，并点名 macos 的明确不对。档案名从 target 三元组改成 `名称_版本.平台_架构.格式`（`rs-kafka-ui-client_0.1.5.macos_arm64.tar.gz`），解压出来的可执行文件从裸 `rs-kafka-ui-client` 改成带版本号的 `rs-kafka-ui-client_0.1.5`（Windows `.exe`）。matrix 的 `arch` 值改成 `x64`/`arm64`，三元组只留在构建命令里。R162–R163。
 
 ---
 
@@ -295,6 +296,7 @@
 | T123 | 用 `OPENSSL_SRC_PERL` 明确指定 perl，不再跟 PATH 赌 | T119,T122 | 手动（annotation 全量 + 上游源码） | ✅（第四轮证明生效：perl 报错整段消失。第三轮证明 PATH 前置已生效却仍用 MSYS perl ⇒ 杠杆是 `openssl-src src/lib.rs:158` 的 `OPENSSL_SRC_PERL`；R157–R158） |
 | T124 | Windows 的 CMake 生成器显式钉成 NMake Makefiles | T120,T121,T122,T123 | 手动（annotation + 本机 CMake 复现 + 上游源码） | ✅（`Could not create named generator Visual Studio 18 2026` 是 cmake crate 给 Vs18 起的名字；改成 env 显式钉 NMake + 失败上报按关键字挑行；R159–R160） | **最终验收（第五轮 run 39057524891）**：六个 job 全绿、`publish release` success、Release v0.1.5 五个产物、正文 `Full Changelog` 只出现 1 次 |
 | T125 | `v0.1.5` 发布验收：五平台产物 + 单点发布 + 命名规范 | T119,T120,T121,T122,T123,T124 | Actions API + Release API | ✅（run 39057524891 六 job 全绿；5 产物 = 4 tar.gz + 1 zip；正文 `Full Changelog` ×1；R161） |
+| T126 | 产物名改成 `名称_版本.平台_架构.格式`，解压文件带版本号 | T119,T113 | 手动（YAML 解析 + 五平台名单模拟） | ✅（档案名 `rs-kafka-ui-client_0.1.5.macos_arm64.tar.gz` 等五条；解压出来叫 `rs-kafka-ui-client_0.1.5`（Windows 加 `.exe`）；`arch` 改 x64/arm64；R162–R163） |
 | T115 | 发布版本同步：tag 与 `Cargo.toml` 不一致导致的 v0.1.3 失败 | T114 | 手动（`scripts/release.sh` 干跑 + 护栏核对） | ✅（新增 `scripts/release.sh`：格式/tag 重名/脏树/同版本四道拒绝，bump 后跑 `cargo update --workspace` 刷 `Cargo.lock`（release 用 `--locked`，不同步会直接失败），再 commit+tag+push；并把 `[workspace.package] version` 由 0.1.0 提为 **0.1.3**（`Cargo.lock` 五个成员同步）；v0.1.3 失败的根因即 T114 护栏按设计开火；R141–R143） |
 
 ---

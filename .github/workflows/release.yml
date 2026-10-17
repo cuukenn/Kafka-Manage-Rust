@@ -21,16 +21,18 @@ jobs:
           # 各平台主流架构：windows-x64 / linux-x64+aarch64 / macos-arm64+x64
           # T109: macos-13 已于 2025-12-04 退役、macos-14 于 2026-11-02 退役，
           # 故 Intel 用官方替代 macos-15-intel，arm64 用 macos-15。
-          - { os: windows-latest,     platform: windows, arch: x86_64, target: x86_64-pc-windows-msvc,    ext: zip }
-          - { os: ubuntu-22.04,       platform: linux,   arch: x86_64, target: x86_64-unknown-linux-gnu,  ext: tar.gz }
-          - { os: ubuntu-24.04-arm,   platform: linux,   arch: aarch64, target: aarch64-unknown-linux-gnu, ext: tar.gz }
-          - { os: macos-15-intel,     platform: macos,   arch: x86_64, target: x86_64-apple-darwin,       ext: tar.gz }
-          - { os: macos-15,           platform: macos,   arch: arm64,  target: aarch64-apple-darwin,      ext: tar.gz }
+          # T126: arch 用 x64 / arm64（产物名里的「平台_架构」），Rust 的三元组在 target 里。
+          - { os: windows-latest,     platform: windows, arch: x64,   target: x86_64-pc-windows-msvc,    ext: zip }
+          - { os: ubuntu-22.04,       platform: linux,   arch: x64,   target: x86_64-unknown-linux-gnu,  ext: tar.gz }
+          - { os: ubuntu-24.04-arm,   platform: linux,   arch: arm64, target: aarch64-unknown-linux-gnu, ext: tar.gz }
+          - { os: macos-15-intel,     platform: macos,   arch: x64,   target: x86_64-apple-darwin,       ext: tar.gz }
+          - { os: macos-15,           platform: macos,   arch: arm64, target: aarch64-apple-darwin,      ext: tar.gz }
 
     env:
       APP_NAME: rs-kafka-ui-client # 软件名（产物名前缀）
       BIN: main-bin                 # cargo 二进制名（构建后重命名为 APP_NAME）
       PLATFORM: ${{ matrix.platform }}
+      ARCH: ${{ matrix.arch }}         # T126: x64 / arm64（产物名里的架构段）
       TARGET: ${{ matrix.target }}
       EXT: ${{ matrix.ext }}
 
@@ -130,8 +132,9 @@ jobs:
       - name: 准备产物文件
         shell: bash
         run: |
-          OUTBIN="${APP_NAME}"
-          [ "$PLATFORM" = "windows" ] && OUTBIN="${APP_NAME}.exe"
+          # T126: 解压出来的文件 = 软件名_版本号.格式（Windows 有 .exe；Linux/macOS 的可执行文件没有格式段）。
+          OUTBIN="${APP_NAME}_${VERSION}"
+          [ "$PLATFORM" = "windows" ] && OUTBIN="${APP_NAME}_${VERSION}.exe"
           mkdir -p staging
           cp "target/${TARGET}/release/${BIN}" "staging/${OUTBIN}"
           echo "OUTBIN=${OUTBIN}" >> "$GITHUB_ENV"
@@ -143,8 +146,8 @@ jobs:
         shell: pwsh
         run: |
           # T119: OpenSSL 已由 ssl-vendored 静态编进 exe，不再需要随包发 DLL。
-          # T119: 名称-版本号-架构-格式，架构用完整 target 三元组（唯一，不会 aarch64 撞名）。
-          $name = "$env:APP_NAME-$env:VERSION-$env:TARGET"
+          # T126: 档案名 = 名称_版本.平台_架构.格式。
+          $name = "${env:APP_NAME}_${env:VERSION}.${env:PLATFORM}_${env:ARCH}"
           Compress-Archive -Path staging\* -DestinationPath "$name.zip" -Force
           "ASSET=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -152,8 +155,8 @@ jobs:
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          # T119: 名称-版本号-架构-格式（与 Windows 步同一套命名）。
-          NAME="${APP_NAME}-${VERSION}-${TARGET}"
+          # T126: 档案名 = 名称_版本.平台_架构.格式（与 Windows 步同一套命名）。
+          NAME="${APP_NAME}_${VERSION}.${PLATFORM}_${ARCH}"
           tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
           echo "ASSET=${NAME}.tar.gz" >> "$GITHUB_ENV"
 
