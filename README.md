@@ -80,8 +80,8 @@ cargo test -p kafka-driver --test mock_lifecycle
 # 全仓测试
 cargo test --workspace
 
-# 启用真实 Kafka 驱动（需 cmake + C 工具链）
-cargo check -p kafka-driver --features real
+# 启用真实 Kafka 驱动（需 cmake + C 工具链 + 正确的 OpenSSL，见「运行」一节）
+cargo check -p kafka-driver --features real   # 只做类型检查、不链接，别把它当作 real 能构建的凭据
 ```
 
 Mock 是默认驱动（`kafka-driver` 的 `default = []`，`real` 为 opt-in），不使用 rdkafka 时无需 librdkafka/cmake。
@@ -102,14 +102,29 @@ cd frontend && npm run build && cd ..
 KAFKA_UI_DEV_DIR="$PWD/frontend/dist" cargo run -p main-bin
 ```
 
-**连真实 Kafka**：构建时打开 `real` 特性（macOS 需 `cmake` 与 openssl@3），随后在界面里新增集群、取消勾选「Mock 驱动」、填 bootstrap 地址：
+**连真实 Kafka**：构建时打开 `real` 特性（需 `cmake` 与 `openssl@3`），随后在界面里新增集群、取消勾选「Mock 驱动」、填 bootstrap 地址。macOS 上直接用脚本，它会自己找到 keg-only 的 openssl@3：
 
 ```sh
 brew install cmake openssl@3
-export PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@3/lib/pkgconfig"
-export OPENSSL_DIR="/opt/homebrew/opt/openssl@3"
+./scripts/real-run.sh        # 等价于 cargo run -p main-bin --features real，参数可透传
+```
+
+**为什么需要指路**：Homebrew 默认的 `openssl` 已经是 4.x，而 OpenSSL 4 不再导出 ENGINE API，vendored 的 librdkafka 2.12.1 仍在 `rdkafka_ssl.c` 里调用 `ENGINE_*`，于是链接失败：
+
+```
+Undefined symbols for architecture arm64:
+  "_ENGINE_by_id", referenced from: _rd_kafka_ssl_ctx_init_engine ...
+```
+
+openssl@3 是 keg-only 的，pkg-config 默认找不到它。脚本做的事就是这两行环境变量：
+
+```sh
+export OPENSSL_DIR="$(brew --prefix openssl@3)"
+export PKG_CONFIG_PATH="$OPENSSL_DIR/lib/pkgconfig"
 cargo run -p main-bin --features real
 ```
+
+⚠️ `cargo check` 不链接，所以在上面环境缺失时它照样「通过」——只有 `cargo build` / `cargo run` 会暴露这个链接错误。
 
 没开 `real` 时非 mock 集群不会崩，而是给出明确错误：`real Kafka driver is not compiled in; rebuild with --features real`。
 
