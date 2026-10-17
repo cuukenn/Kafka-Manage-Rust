@@ -52,7 +52,7 @@ jobs:
       - name: 安装 Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # main-bin 用 include_dir 把 frontend/dist 嵌入为静态资源，必须先构建前端
       - name: 构建前端
