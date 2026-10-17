@@ -31,7 +31,8 @@ jobs:
     env:
       APP_NAME: rs-kafka-ui-client # 软件名（产物名前缀）
       BIN: main-bin                 # cargo 二进制名（构建后重命名为 APP_NAME）
-      PLATFORM: ${{ matrix.platform }}
+      # T127: 删掉 PLATFORM —— 它会被 msvc-dev-cmd 的 Platform=x64 顶掉（Windows 环境变量不分大小写），
+      # 需要平台名的时候一律用 ${{ matrix.platform }} 让 runner 直接替换。
       ARCH: ${{ matrix.arch }}         # T126: x64 / arm64（产物名里的架构段）
       TARGET: ${{ matrix.target }}
       EXT: ${{ matrix.ext }}
@@ -132,12 +133,41 @@ jobs:
       - name: 准备产物文件
         shell: bash
         run: |
-          # T126: 解压出来的文件 = 软件名_版本号.格式（Windows 有 .exe；Linux/macOS 的可执行文件没有格式段）。
-          OUTBIN="${APP_NAME}_${VERSION}"
-          [ "$PLATFORM" = "windows" ] && OUTBIN="${APP_NAME}_${VERSION}.exe"
+          # T126: 解压出来的文件带平台对应的格式段（Windows 是 .exe）。
+          # T127: macOS 包成 .app —— Finder 能直接双击打开的格式；Linux 保持裸二进制（./名字 就是它的运行方式）。
+          # T127: 这里不再读 $PLATFORM（见下面打包步的说明），改用 ${{ matrix.platform }}。
+          case "${{ matrix.platform }}" in
+            windows) OUTBIN="${APP_NAME}_${VERSION}.exe"; BUNDLE="" ;;
+            macos) OUTBIN="${APP_NAME}_${VERSION}"; BUNDLE="${APP_NAME}_${VERSION}.app" ;;
+            *) OUTBIN="${APP_NAME}_${VERSION}"; BUNDLE="" ;;
+          esac
           mkdir -p staging
-          cp "target/${TARGET}/release/${BIN}" "staging/${OUTBIN}"
+          if [ -n "$BUNDLE" ]; then
+            mkdir -p "staging/$BUNDLE/Contents/MacOS"
+            cp "target/${TARGET}/release/${BIN}" "staging/$BUNDLE/Contents/MacOS/${OUTBIN}"
+            cat > "staging/$BUNDLE/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          <key>CFBundleName</key><string>${APP_NAME}</string>
+          <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+          <key>CFBundleExecutable</key><string>${OUTBIN}</string>
+          <key>CFBundleIdentifier</key><string>com.github.cuukenn.rs-kafka-ui-client</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+          <key>CFBundleVersion</key><string>${VERSION}</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          else
+            cp "target/${TARGET}/release/${BIN}" "staging/${OUTBIN}"
+          fi
           echo "OUTBIN=${OUTBIN}" >> "$GITHUB_ENV"
+          echo "BUNDLE=${BUNDLE}" >> "$GITHUB_ENV"
 
       # T109: bash 下的 tar 在 windows runner 上会解析到 Git 自带的 GNU tar，而 GNU tar 的
       # -a 不认 .zip（不报错，只是写一个未压缩的 tar）。Windows 产物改用 Compress-Archive。
@@ -147,7 +177,10 @@ jobs:
         run: |
           # T119: OpenSSL 已由 ssl-vendored 静态编进 exe，不再需要随包发 DLL。
           # T126: 档案名 = 名称_版本.平台_架构.格式。
-          $name = "${env:APP_NAME}_${env:VERSION}.${env:PLATFORM}_${env:ARCH}"
+          # T127: 不读 $PLATFORM —— ilammy/msvc-dev-cmd 会往环境写 Platform=x64，Windows 环境变量
+          # 不区分大小写，把 job 的 PLATFORM=windows 顶掉，v0.1.5 因此产出了 x64_x64.zip。
+          # 改用 runner 先替换的 ${{ matrix.platform }}，shell 根本看不到这个变量，撞不了名。
+          $name = "${env:APP_NAME}_${env:VERSION}.${{ matrix.platform }}_${env:ARCH}"
           Compress-Archive -Path staging\* -DestinationPath "$name.zip" -Force
           "ASSET=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -156,8 +189,13 @@ jobs:
         shell: bash
         run: |
           # T126: 档案名 = 名称_版本.平台_架构.格式（与 Windows 步同一套命名）。
-          NAME="${APP_NAME}_${VERSION}.${PLATFORM}_${ARCH}"
-          tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
+          # T127: macOS 打的是 .app 目录（tar 保留目录结构与可执行位）。
+          NAME="${APP_NAME}_${VERSION}.${{ matrix.platform }}_${ARCH}"
+          if [ -n "$BUNDLE" ]; then
+            tar -czf "${NAME}.tar.gz" -C staging "$BUNDLE"
+          else
+            tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
+          fi
           echo "ASSET=${NAME}.tar.gz" >> "$GITHUB_ENV"
 
       # T113: 只把产物存成 workflow artifact。以前 5 个 matrix job 各自调 action-gh-release，
