@@ -60,6 +60,8 @@
 
 35. **T114**：下次打 tag 时，若 tag 与 `Cargo.toml` 的 `[workspace.package] version` 不一致（例如 tag `v9.9.9` 而文件里是 `0.1.0`），`release` workflow 应在 **第一个 job `version-guard`** 就红，且 `build`/`release` 一个都不启动（Actions 页看不到五个平台 runner）；tag 与版本一致时照常发布。
 
+36. **T115**：发布流程改为走 `scripts/release.sh <version>`——先 `--dry-run` 看清会改什么，真跑后本地应多出 `chore(release): vX.Y.Z` 提交与同名 annotated tag，且推送后 `version-guard` job 通过；同时确认 `Cargo.lock` 里五个成员版本与 tag 一致（否则 `--locked` 构建会失败）。另：`v0.1.3` 的 tag 已被重新指向带 0.1.3 版本的提交，Actions 里应有一次新的运行。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

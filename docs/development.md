@@ -110,6 +110,25 @@ docker compose -f scripts/kafka/docker-compose.yml up -d
 
 运行数据放在平台本地数据目录下的 `rs-kafka-ui-client/`（macOS：`~/Library/Application Support/rs-kafka-ui-client/`），内含本地库文件与轮转日志 `logs/app.log`。
 
+## 发布（打 tag）
+
+发布由 tag 驱动：`release.yml` 在 `v*` 上构建五平台产物，再由单个 `release` job 创建 Release。
+**tag 必须与 `Cargo.toml` 的 `[workspace.package] version` 一致**——`version-guard` job 在两者
+不符时直接失败，后续 job 全部跳过（`v0.1.3` 就这样红过一次：tag 说 0.1.3、清单说 0.1.0，
+而它的产物名会自称 0.1.3、里面的二进制却报告 0.1.0）。
+
+用脚本走完这条路，别手改版本号：
+
+```bash
+scripts/release.sh 0.1.4 --dry-run   # 只打印会改什么，随后回滚
+scripts/release.sh 0.1.4             # bump + 刷新 Cargo.lock + commit + tag + push
+```
+
+脚本会拒绝：版本号格式不对（要 `0.1.4` 这种，不带 `v`）、该 tag 已存在、工作树不干净、
+当前版本已经是目标版本。bump 之后它会跑 `cargo update --workspace`——每个 workspace 成员
+都会把自己的版本写进 `Cargo.lock`，而 `release.yml` 用的是 `--locked`，不同步就会以
+`cannot update the lock file … because --locked was passed` 失败。
+
 ## 任务与卡片
 
 每个改动一张卡：`docs/tasks/Txxx-*.md`，完成时在 `docs/TASKS.md` 对应行标 ✅ 并在卡尾补 ≤5 行「结果」。含 `手动` / `real` 验证的卡，另在 `docs/tasks/STAGE4-manual-checklist.md` 追加一条。
