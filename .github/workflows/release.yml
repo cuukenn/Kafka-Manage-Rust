@@ -76,6 +76,20 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # T121: v0.1.5 的 Windows 失败正文显示 rustc 调的是 "C:\Program Files\Git\usr\bin\link.exe"
+      # —— MSYS 的「建硬链接」工具，不是 MSVC 链接器（所以报 "extra operand"）。显式给出绝对路径，
+      # PATH 顺序就不再参与决策；顺带把 PATH 上实际解析到的那个打成 annotation 留证据。
+      - name: 钉住 MSVC 链接器（Windows）
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $link = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64\link.exe'
+          if (-not (Test-Path $link)) { throw "VCToolsInstallDir 里没有 link.exe：$link" }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$link" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+          $first = (where.exe link.exe | Select-Object -First 1)
+          Write-Host "::warning::MSVC link.exe pinned to $link | PATH resolves link.exe to $first"
+
       # T120: 匿名身份读不到 job 日志（logs 端点 404），但 annotations 读得到。
       # 失败时把日志尾部打成 ::error::，不用人肉贴日志也能定位真正的报错。
       - name: 编译 release 二进制（含 real 驱动）
