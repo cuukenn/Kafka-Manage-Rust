@@ -85,6 +85,7 @@
 - ✅ **T105（阶段 11 · 缺陷修复，2026-10-17）**：用户报「真 Kafka 订阅后一行数据都没有」。逐层实测证明通路无缺陷（驱动/router/bus/前端事件桥与 RPC 桥、T077 一致性、T100 E2E 全绿；真驱动下 `message.received` 一律晚于 RPC 回复，故「前端吞首批消息」的竞态被否定），真因是该 broker 上除探针主题外只有一个**空的** `__consumer_offsets`（50 分区、0 条消息），而消费页默认选中主题列表第一个、`topic.list` 又不保证顺序；对空主题 earliest+follow 订阅**正确地**得到 0 行，界面却不给解释。只改 `frontend/src/views/ConsumeView.vue`（+17/−2、1 个源文件）：默认选第一个非 `__` 主题，空态拆成「未订阅 / 已订阅无数据 / 过滤无匹配」三分支并对内部主题点明。R113–R114。
 - ✅ **T106（阶段 11 · 缺陷修复，2026-10-17）**：用户报「订阅切换 tab 就不订阅了」。根因是主视图区用 `v-if` 串在 `ui.currentView` 上，切走 consume 会**卸载** `ConsumeView`，而它在 `onBeforeUnmount` 里 `void unsubscribe()`（原注释「leave page -> no leaked subscription」）——于是「看一眼别的 tab」被当成「离开页面」，订阅被前端主动取消。修法：把它移出 `v-if` 链、改由 `KeepAlive` 包裹（切 tab 只 deactivate），并补 `onActivated` 让主题列表回页面时仍刷新（R115–R117；`Shell.vue` +7/−1、`ConsumeView.vue` +9/−2；`npm run build` Node 22 / vite 7 通过）。
 - ✅ **T107（阶段 10 · 文档补遗，2026-10-17）**：把三份说明按当前源码逐条对齐——`agents.md`（10→21 行）补预算口径（只有源码行计入；`docs/`、`*.md`、`.github/`、`scripts/`、`frontend/dist/`、`Cargo.lock` 不计）、不要跑 `cargo fmt`、每任务一张卡 + 卡尾 ≤5 行结果 + 手动清单；项目 skill 8 个 md（89→122 行）补 `main-bin` 入口层与 `KAFKA_UI_DEV_DIR`、`MessageStream`/`StreamControls`、`request.cancel` 与 9 个事件名、`tests/`+`benches/`+`examples/` 与 `active_pumps()` 判据、真实门禁命令，`toolchain` 版本改 1.99.1 并写入 openssl@4 的 `_ENGINE_by_id` 链接坑与解法；`README.md`（157→167 行）把三类能力拆成分节条目，**删掉与代码不符的「分页」**、起点写准、Mock 能力加限定语、技术栈补 criterion 与 vendored librdkafka 2.12.1、构建节补 clippy/bench/前端门禁。共 10 个 md、**0 行源码**（R118–R120）。
+- ✅ **T108（阶段 10 · 文档补遗，2026-10-17）**：README 从「同时当两本书」收敛为**只服务第一次看仓库的人**（167→72 行：功能 7 条 + 快速开始 4 段可照抄命令 + 架构一图 + 文档指针 + License）；维护者正文（按平台前置、五条门禁与三条注意事项、技术栈版本表、Workspace 职责、IPC 协议、openssl@4 根因与两种解法、broker 端口、数据目录、卡片与预算约定）整体移入新增的 `docs/development.md`（117 行）；README 只留一行指针，漂移面收敛到链接。围栏成对、5 个链接目标均在；全部 `*.md`、0 行源码（R121–R123）。
 
 ---
 
@@ -255,6 +256,7 @@
 | T103 | README 补「运行」章节 + 修前置块排版 | 无 | 文档 | ✅（仅 README.md；新增 4 条运行路径，修掉被切碎的两个前置引用与 `\#` 转义残留；R108–R109） |
 | T104 | `--features real` 链接失败：Homebrew openssl@4 缺 ENGINE API | 无 | 手动（`scripts/real-run.sh build -p main-bin --features real`） | ✅（仅 README.md + scripts/real-run.sh；默认 pkg-config 已是 openssl@4 4.0.3 且不导出 `_ENGINE_*`，vendored librdkafka 2.12.1 仍调用 → 链接 101；脚本定位 keg-only openssl@3 后退出码 0，并在机器级 `~/.cargo/config.toml` 钉住 openssl@3 使裸命令直接可编译；R110–R112） |
 | T107 | agents.md / 项目 skill / README 描述对齐当前源码 | 无 | 文档（人工通读 + 与源码逐条核对） | ✅（10 个 md、0 行源码；删掉假「分页」等 3 处纠错，补齐预算口径 / 入口层 / 门禁 / openssl 坑；R118–R120） |
+| T108 | README 瘦身：读者优先，维护者内容拆成 development.md | 无 | 文档（人工通读 + 链接与围栏校验） | ✅（README 167→72 行 + 新增 docs/development.md 117 行；0 行源码；R121–R123） |
 
 ### 阶段 11 · 缺陷修复
 
