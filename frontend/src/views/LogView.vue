@@ -3,6 +3,7 @@
 // Newest on top, level filter (全部/error/warn/info), clear button, 500 cap.
 import { computed, ref } from 'vue';
 import { logState, clearLogs, type LogLevel } from '../store/logs';
+import { downloadText } from '../utils/render';
 
 const filter = ref<'all' | LogLevel>('all');
 
@@ -14,6 +15,21 @@ const rows = computed(() =>
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
+// T083b: what is on screen is what gets exported (R90), oldest first (R91).
+function exportLogs(): void {
+  const tail = [...rows.value].reverse().map(
+    (e) => `[${new Date(e.ts).toISOString()}] ${e.level.toUpperCase()} ${e.source} ${e.text}`,
+  );
+  downloadText(`kafka-logs-${stamp()}.txt`, `${tail.join('\n')}\n`);
+}
+
+function stamp(): string {
+  const d = new Date();
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const date = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  return `${date}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
 const LEVEL_CLASS: Record<LogLevel, string> = {
@@ -43,6 +59,15 @@ const LEVEL_CLASS: Record<LogLevel, string> = {
         @click="clearLogs"
       >
         清空
+      </button>
+      <button
+        type="button"
+        class="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+        :disabled="rows.length === 0"
+        title="导出当前筛选结果（最旧在前）"
+        @click="exportLogs"
+      >
+        导出
       </button>
       <span class="ml-auto text-xs text-slate-500 dark:text-slate-400">
         {{ rows.length }} / 500

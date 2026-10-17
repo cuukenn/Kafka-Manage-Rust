@@ -71,9 +71,9 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Blob + a[download] JSON download (WebView2 download UI is a manual-verify item). */
-export function downloadJson(filename: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+/** Blob + a[download] download. WebView2's download UI is a manual-verify item. */
+export function downloadText(filename: string, text: string, mime = 'text/plain'): void {
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -82,4 +82,9 @@ export function downloadJson(filename: string, data: unknown): void {
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/** Pretty JSON through the same path (T083b: `downloadText` is the shared half). */
+export function downloadJson(filename: string, data: unknown): void {
+  downloadText(filename, JSON.stringify(data, null, 2), 'application/json');
 }
