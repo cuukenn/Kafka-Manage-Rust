@@ -29,8 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         # Pinned to the release workflow's targets (R98) so CI and release build
-        # the same images.
-        os: [ubuntu-22.04, macos-14, windows-latest]
+        # the same images. T109: macos-14 → macos-15（macos-14 于 2026-11-02 退役）。
+        os: [ubuntu-22.04, macos-15, windows-latest]
     steps:
       - uses: actions/checkout@v4
 

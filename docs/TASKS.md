@@ -86,6 +86,7 @@
 - ✅ **T106（阶段 11 · 缺陷修复，2026-10-17）**：用户报「订阅切换 tab 就不订阅了」。根因是主视图区用 `v-if` 串在 `ui.currentView` 上，切走 consume 会**卸载** `ConsumeView`，而它在 `onBeforeUnmount` 里 `void unsubscribe()`（原注释「leave page -> no leaked subscription」）——于是「看一眼别的 tab」被当成「离开页面」，订阅被前端主动取消。修法：把它移出 `v-if` 链、改由 `KeepAlive` 包裹（切 tab 只 deactivate），并补 `onActivated` 让主题列表回页面时仍刷新（R115–R117；`Shell.vue` +7/−1、`ConsumeView.vue` +9/−2；`npm run build` Node 22 / vite 7 通过）。
 - ✅ **T107（阶段 10 · 文档补遗，2026-10-17）**：把三份说明按当前源码逐条对齐——`agents.md`（10→21 行）补预算口径（只有源码行计入；`docs/`、`*.md`、`.github/`、`scripts/`、`frontend/dist/`、`Cargo.lock` 不计）、不要跑 `cargo fmt`、每任务一张卡 + 卡尾 ≤5 行结果 + 手动清单；项目 skill 8 个 md（89→122 行）补 `main-bin` 入口层与 `KAFKA_UI_DEV_DIR`、`MessageStream`/`StreamControls`、`request.cancel` 与 9 个事件名、`tests/`+`benches/`+`examples/` 与 `active_pumps()` 判据、真实门禁命令，`toolchain` 版本改 1.99.1 并写入 openssl@4 的 `_ENGINE_by_id` 链接坑与解法；`README.md`（157→167 行）把三类能力拆成分节条目，**删掉与代码不符的「分页」**、起点写准、Mock 能力加限定语、技术栈补 criterion 与 vendored librdkafka 2.12.1、构建节补 clippy/bench/前端门禁。共 10 个 md、**0 行源码**（R118–R120）。
 - ✅ **T108（阶段 10 · 文档补遗，2026-10-17）**：README 从「同时当两本书」收敛为**只服务第一次看仓库的人**（167→72 行：功能 7 条 + 快速开始 4 段可照抄命令 + 架构一图 + 文档指针 + License）；维护者正文（按平台前置、五条门禁与三条注意事项、技术栈版本表、Workspace 职责、IPC 协议、openssl@4 根因与两种解法、broker 端口、数据目录、卡片与预算约定）整体移入新增的 `docs/development.md`（117 行）；README 只留一行指针，漂移面收敛到链接。围栏成对、5 个链接目标均在；全部 `*.md`、0 行源码（R121–R123）。
+- ✅ **T109（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 从未跑过（`git tag` 为空），静态校验却查出四处硬伤——① Linux 两个 job **没有系统依赖步骤**（ci.yml 有、release.yml 漏了）⇒ `cargo build` 必失败；② `macos-13` **2025-12-04 已退役**、③ `macos-14` **2026-11-02 退役**（10 月已有 brownout）⇒ 改 `macos-15-intel` / `macos-15`，ci.yml 同一 label 一并换以保住 R98 的对齐；④ `tar -a -cf *.zip` 在 windows runner 上走 Git 的 GNU tar，而后缀表里没有 `.zip` ⇒ 产出**扩展名撒谎的未压缩 tar**，改用 `Compress-Archive`（pwsh）。另补 `--locked` 与 `generate_release_notes: true`。`ruby -ryaml` 双文件解析通过；仍**未在托管 runner 上执行过**（R124–R126）。
 
 ---
 
@@ -264,6 +265,7 @@
 |---|---|---|---|---|
 | T105 | 消费页空态：默认不选内部主题 + 说明「已订阅但没有数据」 | 无 | 手动（`npm run build` + 真 Kafka 订阅观察） | ✅（仅 `ConsumeView.vue` +17/−2；默认落在非 `__` 主题；空态三分支；R113–R114） |
 | T106 | 切 tab 不再中断消费订阅 | 无 | 手动（npm run build + 切 tab 观察订阅仍在） | ✅（`Shell.vue` +7/−1 把 `ConsumeView` 移出 `v-if` 链、改由 `<KeepAlive>` 包裹；`ConsumeView.vue` +9/−2 增加 `onActivated` 刷新主题列表、订正 `onBeforeUnmount` 注释；R115–R117） |
+| T109 | 修正 release workflow：Linux 依赖 / 退役 runner label / Windows 真 zip | T092 | 手动（YAML 解析 + 外部事实核对） | ✅（release.yml 补齐四处可执行性缺陷，ci.yml 的 macos-14 同步；0 行源码；R124–R126） |
 
 ---
 
