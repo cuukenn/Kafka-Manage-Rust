@@ -76,6 +76,23 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # T124: v0.1.5 第四轮的失败正文是
+      #   CMake Error: Could not create named generator Visual Studio 18 2026
+      # 那串名字是 cmake crate 自己给 Vs18 起的（cmake-0.1.58 src/lib.rs:966），runner 上的
+      # CMake 不认它。crate 在 MSVC 下只有两条安全路径：VS 生成器，或 NMake Makefiles
+      # （src/lib.rs:649-652 明确支持后者，且此时不会塞 -Thost=x64 -Ax64 —— 宿主架构由 vcvars 定）。
+      # nmake 由上一步的 msvc-dev-cmd 保证存在（与已钉住的 link.exe 同目录）。
+      # 生成器名用 env 显式给出，不让 crate 去注册表猜 VS 版本 —— 与 R157 同一原则。
+      - name: CMake 生成器（Windows）
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          "CMAKE_GENERATOR=NMake Makefiles" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $cmakeVer = (cmake --version | Select-Object -First 1)
+          $nmake = (where.exe nmake | Select-Object -First 1)
+          if (-not $nmake) { throw "nmake 不在 PATH（msvc-dev-cmd 没生效？）" }
+          Write-Host "::notice::CMAKE_GENERATOR=NMake Makefiles | $cmakeVer | nmake=$nmake"
+
       # T121: v0.1.5 的 Windows 失败正文显示 rustc 调的是 "C:\Program Files\Git\usr\bin\link.exe"
       # —— MSYS 的「建硬链接」工具，不是 MSVC 链接器（所以报 "extra operand"）。显式给出绝对路径，
       # PATH 顺序就不再参与决策；顺带把 PATH 上实际解析到的那个打成 annotation 留证据。
@@ -99,7 +116,10 @@ jobs:
           cargo build --release -p main-bin --target "$TARGET" --locked --features real 2>&1 | tee build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            tail -n 25 build.log | while IFS= read -r line; do
+            # T124: 真正的报错常在日志尾部之前（CMake 失败会把整份 generator 清单打到最后），
+            # 所以按关键字挑行，而不是无脑取尾巴 25 行。
+            grep -niE "cmake error|could not create named generator|^error|error:|panicked|could not|not found|generator|nmake|perl reported" build.log |
+              tail -n 25 | while IFS= read -r line; do
               line="${line//%/25}"; line="${line//\"/%22}"
               printf '::error::%s\n' "$line"
             done

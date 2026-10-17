@@ -100,6 +100,7 @@
 - 🔄 **T121（阶段 11 · 缺陷修复，2026-10-18）**：T120 的 annotation 通道一生效，v0.1.5 的 Windows 失败正文就出来了（run 39053986277）：rustc 调的是 `C:\Program Files\Git\usr\bin\link.exe`（MSYS 的建硬链接工具，报 `extra operand`），不是 MSVC 链接器；同轮四个平台全绿 ⇒ vendored OpenSSL 没问题。修法：`msvc-dev-cmd` 之后用 `VCToolsInstallDir` 拼出 MSVC link.exe 的绝对路径，经 `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER` 交给 cargo，并把 `where.exe link.exe` 打成 annotation。
 - 🔄 **T122（阶段 11 · 缺陷修复，2026-10-18）**：T121 的链接器钉法已被 annotation 证明生效（pinned 与 PATH 解析到同一个 MSVC `link.exe`）。Windows 于是露出下一层：`openssl-src` 跑 `perl ./Configure` 失败——`@INC` 全是 `/usr/lib/perl5/...` ⇒ PATH 上那个 perl 是 Git for Windows 带的 MSYS 裁剪版，缺 `Locale::Maketext::Simple`。OpenSSL 不能砍（`real/config.rs:41-42` 的 `apply_tls` 是产品功能），所以 real-deps 新增 Windows 步：没有 Strawberry 就 choco 装、把它的三个 bin 前置进 PATH、再 `perl -MLocale::Maketext::Simple` 自检。R155–R156。
 - 🔄 **T123（阶段 11 · 缺陷修复，2026-10-18）**：T122 的 notice 证明 Strawberry perl 已排在 PATH 最前，但 v0.1.5 第三轮报的错逐字未变 —— 真正跑 `./Configure` 的还是 Git 的 MSYS perl（build 步在 `bash` 下，Git Bash 会把 `/usr/bin` 再插到最前）。改走上游的显式入口 `OPENSSL_SRC_PERL`（`openssl-src src/lib.rs:158`），并把 annotation 改成报「真正被用的值」。R157–R158。
+- ✅ **T124（阶段 11 · 缺陷修复，2026-10-18）**：v0.1.5 第四轮四平台全绿、Windows 仍红，但失败点已前移：T123 的 perl 修复生效（perl 报错整段消失），撞到 `CMake Error: Could not create named generator Visual Studio 18 2026` —— 那串名字是 `cmake-0.1.58` 给 `VsVers::Vs18` 起的（`src/lib.rs:962-980`），runner 的 CMake 不认；本机 CMake 4.4.4 复现出同一形状。改成 env 显式钉 `CMAKE_GENERATOR=NMake Makefiles`（crate 在 MSVC 下明确支持它，此时不塞 `-Thost/-A`），并把失败上报从「尾部 25 行」改成「按关键字挑行」。R159–R160。
 
 ---
 
@@ -290,7 +291,8 @@
 | T120 | Windows 的 real 构建修复（MSVC 开发环境）+ 失败日志改走 annotation | T119 | Actions API（annotations） | 🔄（v0.1.5：`windows-x86_64` 在 build 步红、publish skipped、Release 404；`real feature check` 绿 ⇒ 问题只在 MSVC；R151–R152） |
 | T121 | Windows 的 link.exe 被 MSYS 抢走：显式钉住 MSVC 链接器 | T119,T120 | 手动（YAML）+ 待 v0.1.5 重跑 | ✅（annotation 通道生效后才看到的真相：rustc 调的是 Git for Windows 的 MSYS link.exe；改用 CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER 给绝对路径；R153–R154） |
 | T122 | Windows 编 OpenSSL 的 perl：换成 Strawberry（core 模块齐全）+ 自检 | T119,T121 | 手动（run 39054672571 的 annotation 正文） | ✅（根因：PATH 上的 perl 是 Git/MSYS 裁剪版，OpenSSL `./Configure` 缺 `Locale::Maketext::Simple` ⇒ exit 2；choco 装 Strawberry 并前置 PATH，加模块自检；R155–R156） |
-| T123 | 用 `OPENSSL_SRC_PERL` 明确指定 perl，不再跟 PATH 赌 | T119,T122 | 手动（annotation 全量 + 上游源码） | 🔄（第三轮证明 PATH 前置已生效却仍用 MSYS perl ⇒ 杠杆是 `openssl-src src/lib.rs:158` 的 `OPENSSL_SRC_PERL`；R157–R158） |
+| T123 | 用 `OPENSSL_SRC_PERL` 明确指定 perl，不再跟 PATH 赌 | T119,T122 | 手动（annotation 全量 + 上游源码） | ✅（第四轮证明生效：perl 报错整段消失。第三轮证明 PATH 前置已生效却仍用 MSYS perl ⇒ 杠杆是 `openssl-src src/lib.rs:158` 的 `OPENSSL_SRC_PERL`；R157–R158） |
+| T124 | Windows 的 CMake 生成器显式钉成 NMake Makefiles | T120,T121,T122,T123 | 手动（annotation + 本机 CMake 复现 + 上游源码） | ✅（`Could not create named generator Visual Studio 18 2026` 是 cmake crate 给 Vs18 起的名字；改成 env 显式钉 NMake + 失败上报按关键字挑行；R159–R160） |
 | T115 | 发布版本同步：tag 与 `Cargo.toml` 不一致导致的 v0.1.3 失败 | T114 | 手动（`scripts/release.sh` 干跑 + 护栏核对） | ✅（新增 `scripts/release.sh`：格式/tag 重名/脏树/同版本四道拒绝，bump 后跑 `cargo update --workspace` 刷 `Cargo.lock`（release 用 `--locked`，不同步会直接失败），再 commit+tag+push；并把 `[workspace.package] version` 由 0.1.0 提为 **0.1.3**（`Cargo.lock` 五个成员同步）；v0.1.3 失败的根因即 T114 护栏按设计开火；R141–R143） |
 
 ---

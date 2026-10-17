@@ -55,3 +55,9 @@ env::var("OPENSSL_SRC_PERL").unwrap_or(env::var("PERL").unwrap_or("perl".to_stri
 ## 结果（完成后填写，≤5 行）
 
 待 v0.1.5 第四轮。
+
+## 结果补充（第四轮 run 39055727993）
+
+`[notice] OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe` 出现，且 perl 的报错整段消失
+（`Can't locate Locale/Maketext/Simple.pm` 不再出现）⇒ 本卡的杠杆确认生效。
+Windows 接着红在下一层（CMake 生成器），转 T124。
