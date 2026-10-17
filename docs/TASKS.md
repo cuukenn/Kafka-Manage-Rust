@@ -83,6 +83,7 @@
 - ✅ **T103（阶段 10 · 文档补遗，2026-10-17）**：README 原本只讲构建与前置、从没说怎么把程序跑起来，补 `## 运行`（4 条路径：`cargo run -p main-bin`、`KAFKA_UI_DEV_DIR` + Node 22 免重编译、`--features real` + macOS openssl、docker compose broker）；同时修掉两个前置引用被空行切碎、代码块里的 `\#` 转义与 4 处标题后多余空行。仅动 `README.md`，R108–R109。
 - ✅ **T104（阶段 10 · 文档补遗，2026-10-17）**：用户报「无法编译 real」。复现并定位为**宿主 OpenSSL 版本**：Homebrew 默认 `openssl` 已指向 openssl@4 4.0.3，而 OpenSSL 4 不再导出 ENGINE API，vendored librdkafka 2.12.1 仍调用 `ENGINE_by_id` 等 5 个符号，链接阶段 `Undefined symbols`（退出码 101）；`openssl@3`（3.5.9）已装但 keg-only，pkg-config 默认找不到。新增 `scripts/real-run.sh`（`brew --prefix openssl@3` → 导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH` → `exec cargo "$@"`）并重写 README「运行」一节的 real 段（根因 + 脚本入口 + 手动等价命令 + 「`cargo check` 不链接」警告）。仅动文档与脚本，源码 0 行；R110（不提交 `.cargo/config.toml` 的 `[env]`，否则 Linux runner 会因该绝对路径失败）、R111（不改依赖绕过）。第二轮把裸命令也修好：机器级 `~/.cargo/config.toml` 的 `[env]` 钉住 `OPENSSL_DIR` / `PKG_CONFIG_PATH`（R112；`force` 默认 false，不覆盖显式值与 CI）；验证在两者全 unset 时 `cargo build -p main-bin --features real` 退出码 0，`cargo run -p main-bin --features real` 成功起窗。
 - ✅ **T105（阶段 11 · 缺陷修复，2026-10-17）**：用户报「真 Kafka 订阅后一行数据都没有」。逐层实测证明通路无缺陷（驱动/router/bus/前端事件桥与 RPC 桥、T077 一致性、T100 E2E 全绿；真驱动下 `message.received` 一律晚于 RPC 回复，故「前端吞首批消息」的竞态被否定），真因是该 broker 上除探针主题外只有一个**空的** `__consumer_offsets`（50 分区、0 条消息），而消费页默认选中主题列表第一个、`topic.list` 又不保证顺序；对空主题 earliest+follow 订阅**正确地**得到 0 行，界面却不给解释。只改 `frontend/src/views/ConsumeView.vue`（+17/−2、1 个源文件）：默认选第一个非 `__` 主题，空态拆成「未订阅 / 已订阅无数据 / 过滤无匹配」三分支并对内部主题点明。R113–R114。
+- ✅ **T106（阶段 11 · 缺陷修复，2026-10-17）**：用户报「订阅切换 tab 就不订阅了」。根因是主视图区用 `v-if` 串在 `ui.currentView` 上，切走 consume 会**卸载** `ConsumeView`，而它在 `onBeforeUnmount` 里 `void unsubscribe()`（原注释「leave page -> no leaked subscription」）——于是「看一眼别的 tab」被当成「离开页面」，订阅被前端主动取消。修法：把它移出 `v-if` 链、改由 `KeepAlive` 包裹（切 tab 只 deactivate），并补 `onActivated` 让主题列表回页面时仍刷新（R115–R117；`Shell.vue` +7/−1、`ConsumeView.vue` +9/−2；`npm run build` Node 22 / vite 7 通过）。
 
 ---
 
@@ -258,6 +259,7 @@
 | 卡 | 主题 | 依赖 | 验证 | 状态 |
 |---|---|---|---|---|
 | T105 | 消费页空态：默认不选内部主题 + 说明「已订阅但没有数据」 | 无 | 手动（`npm run build` + 真 Kafka 订阅观察） | ✅（仅 `ConsumeView.vue` +17/−2；默认落在非 `__` 主题；空态三分支；R113–R114） |
+| T106 | 切 tab 不再中断消费订阅 | 无 | 手动（npm run build + 切 tab 观察订阅仍在） | ✅（`Shell.vue` +7/−1 把 `ConsumeView` 移出 `v-if` 链、改由 `<KeepAlive>` 包裹；`ConsumeView.vue` +9/−2 增加 `onActivated` 刷新主题列表、订正 `onBeforeUnmount` 注释；R115–R117） |
 
 ---
 

@@ -50,6 +50,8 @@
 29. **T104**：本机已把 OpenSSL 钉在**机器级** `~/.cargo/config.toml` 的 `[env]`（R112），因此在**未导出** `PKG_CONFIG_PATH` / `OPENSSL_DIR` 的干净 shell 里直接跑 `cargo build -p main-bin --features real` 应成功、退出码 0，且 `cargo run -p main-bin --features real` 能正常起窗（stderr 有 `local store opened` / `router ready: …consume/group/mock registered` / `event pump online`）。要复现原始缺陷，就显式压回 openssl@4：`cargo --config 'env.OPENSSL_DIR="/opt/homebrew/opt/openssl@4"' --config 'env.PKG_CONFIG_PATH="/opt/homebrew/opt/openssl@4/lib/pkgconfig"' build -p main-bin --features real` → 应报 `Undefined symbols … _ENGINE_by_id`（退出码 101）。另确认 `cargo check -p kafka-driver --features real` 在**两个**方向上都「通过」（它不链接），故不能拿 check 当 real 可构建的凭据。
 
 30. **T105**：消费页需人工确认两处表达——(a) 主题列表含内部主题（`__consumer_offsets` 等）时，默认选中应落在**非 `__` 开头**的主题上；(b) 订阅一个**空的**主题后，消息表应显示「已订阅，当前没有可读消息：该 topic 暂时是空的…」，而不是只显示「暂无消息」；若手选的是 `__*` 主题，还应追加「这是 Kafka 内部 topic，通常没有业务数据」。想看真实数据：主题页新建一个 topic（如 `demo`）→ 生产页发几条 → 回消费页选 `demo` 订阅，行应实时出现。
+31. **T106**：消费页订阅后**切到别的 tab 再切回来**——页面状态应仍是「订阅中」，行数继续增长（不再被当成「离开页面」而取消）。同时确认切回时主题下拉仍是最新的（先在主题页新建 `demo`，切回消费页应能看到它）；关闭应用后重开，订阅不应残留（T063 teardown 仍生效）。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

@@ -152,10 +152,16 @@ function onCancel(): void {
         <TopicsView v-if="ui.currentView === 'clusters' && ui.selectedTopic" />
         <ClustersView v-else-if="ui.currentView === 'clusters'" />
         <ProduceView v-else-if="ui.currentView === 'produce'" />
-        <ConsumeView v-else-if="ui.currentView === 'consume'" />
         <GroupsView v-else-if="ui.currentView === 'groups'" />
         <!-- T049b: log panel (ring buffer fed by event/RPC summaries) -->
         <LogView v-else-if="ui.currentView === 'logs'" />
+        <!-- T106: kept alive on purpose. Unmounting this view used to fire its
+             onBeforeUnmount, which cancels the subscription — so peeking at
+             another tab silently stopped consuming. Kept alive it only
+             deactivates, and the stream keeps running. -->
+        <KeepAlive>
+          <ConsumeView v-if="ui.currentView === 'consume'" />
+        </KeepAlive>
       </main>
     </div>
 

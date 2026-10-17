@@ -12,7 +12,7 @@
 //    `message` is a raw MessageEvent: key/value are NUMBER ARRAYS (Vec<u8> via serde_json),
 //    NOT the MessageDto base64 dual channel — the push path never converts to DTO
 //    (services/consume.rs publishes MessageEvent directly). We decode bytes client-side.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { rpc } from '../bridge/rpc';
 import { on, type BridgeEvent } from '../bridge/events';
 import { clusters } from '../store/clusters';
@@ -288,11 +288,18 @@ onMounted(() => {
   offSubState = on('subscription.state', onSubState);
   offSubDone = on('subscription.done', onSubDone);
 });
+// T106: Shell.vue keeps this view alive, so leaving and returning to the tab
+// deactivates/activates it rather than unmounting/mounting it. Re-entry
+// therefore runs onActivated (not onMounted): refresh the topic list, but leave
+// a running subscription alone — that is the whole point of keeping it alive.
+onActivated(() => void loadTopics());
+// T106: unmount now only happens at app teardown, and then the subscription
+// should indeed go with the view. A tab switch no longer reaches this hook.
 onBeforeUnmount(() => {
   offMessage?.(); // drop the event handlers with the view
   offSubState?.();
   offSubDone?.();
-  void unsubscribe(); // leave page -> no leaked subscription
+  void unsubscribe(); // app teardown -> no leaked subscription
 });
 
 function fmtTs(ts: number): string {
