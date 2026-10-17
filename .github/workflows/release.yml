@@ -37,51 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # T109: 与 ci.yml 同一份清单——tao/wry 链接系统 webview，rdkafka/rusqlite 需要 C 工具链。
-      - name: Linux 系统依赖
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev \
-            pkg-config cmake build-essential
-
-      # T110: 产物必须带 real 驱动（--features real 会拉入 rdkafka/openssl-sys）。
-      # Linux 的 libssl-dev 已由上面的 apt 清单覆盖；macOS 镜像只带 openssl 1.1.1，
-      # 这里显式钉住 keg-only 的 openssl@3（与 T104 在本机踩到的「默认 openssl 4.x
-      # 不再导出 ENGINE API」同源，故不依赖镜像的默认发现结果）。
-      - name: OpenSSL 环境（macOS）
-        if: runner.os == 'macOS'
-        run: |
-          export HOMEBREW_NO_AUTO_UPDATE=1
-          brew install openssl@3
-          prefix="$(brew --prefix openssl@3)"
-          echo "OPENSSL_DIR=${prefix}" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
-
-      # T110/T111: Windows 镜像自带 OpenSSL 3.6.5，装在 `$env:ProgramFiles\OpenSSL`
-      # （见 runner-images 的 `Install-OpenSSL.ps1` 与 `Tools.Tests.ps1`），但 import
-      # 库不在 `lib\` 根下（slproweb 布局是 `lib\VC\<arch>\<runtime>\`），所以递归
-      # 找 `libcrypto.lib` 而不是猜路径；找不到就失败，绝不产出「一启动就崩」的产物。
-      - name: OpenSSL 环境（Windows）
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $roots = @("$env:ProgramFiles\OpenSSL", "$env:ProgramFiles\OpenSSL-Win64", "C:\OpenSSL-Win64")
-          $root = $roots | Where-Object { Test-Path (Join-Path $_ 'include\openssl\ssl.h') } | Select-Object -First 1
-          if (-not $root) { throw "找不到 OpenSSL 开发包（候选：$($roots -join ', ')）" }
-          $lib = Get-ChildItem -Path (Join-Path $root 'lib') -Filter 'libcrypto.lib' -Recurse -File -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-          if (-not $lib) {
-            $listing = (Get-ChildItem (Join-Path $root 'lib') -Recurse -File -ErrorAction SilentlyContinue |
-                        Select-Object -First 30 | ForEach-Object FullName) -join "`n"
-            throw "在 $root\lib 下找不到 libcrypto.lib。已有文件：`n$listing"
-          }
-          "OPENSSL_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "OPENSSL_LIB_DIR=$($lib.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "OPENSSL_INCLUDE_DIR=$root\include" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Join-Path $root 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
-          Write-Host "OpenSSL: $root  lib=$($lib.DirectoryName)"
+      # T112: Linux 系统库 / macOS openssl@3 / Windows OpenSSL 的准备工作抽成复合动作，
+      # 与 ci.yml 共用同一份，避免继续漂移（R98 的同源要求）。
+      - uses: ./.github/actions/real-deps
 
       - name: 提取版本（tag v0.1.0 → 0.1.0）
         shell: bash

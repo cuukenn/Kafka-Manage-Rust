@@ -54,6 +54,8 @@
 
 32. **T111**：下一次打 tag（如 `v0.1.2`）后到 Releases 页确认 —— 五个平台的产物都在（`linux-aarch64` / `linux-x86_64` / `macos-arm64` / `macos-x86_64` / `windows-x86_64`）；Linux 两个 job 不再报 `curl/curl.h: No such file or directory`；Windows 的 zip 里除 exe 还有 `libcrypto-*.dll` 与 `libssl-*.dll`，解压后能直接启动。
 
+33. **T112**：推送后到 GitHub Actions 看 `ci` workflow（push/PR 即触发，**不必打 tag**）——`real feature check` job 应**真正编译并链接** `main-bin --features real`（不再秒过），日志里能看到 `real-deps` 复合作按 runner 平台走不同分支（Linux 装 apt 全清单 / macOS 装 keg-only `openssl@3` / Windows 在 `C:\Program Files\OpenSSL` 下递归找到 `libcrypto.lib`）。本机无法执行 Actions，此项须在推送后确认。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

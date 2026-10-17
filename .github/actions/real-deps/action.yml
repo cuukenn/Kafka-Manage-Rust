@@ -1,0 +1,38 @@
+# T112: 构建 --features real 所需的系统依赖，CI 与 release 共用一份。
+name: real-driver deps
+description: 构建 --features real 所需的系统依赖
+runs:
+  using: composite
+  steps:
+    - name: Linux 系统依赖
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config cmake build-essential
+
+    - name: OpenSSL 环境（macOS）
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        export HOMEBREW_NO_AUTO_UPDATE=1
+        brew install openssl@3
+        prefix="$(brew --prefix openssl@3)"
+        echo "OPENSSL_DIR=${prefix}" >> "$GITHUB_ENV"
+        echo "PKG_CONFIG_PATH=${prefix}/lib/pkgconfig" >> "$GITHUB_ENV"
+
+    - name: OpenSSL 环境（Windows）
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $cands = @("$env:ProgramFiles\OpenSSL", "C:\OpenSSL-Win64")
+        $root = $cands | Where-Object { Test-Path (Join-Path $_ 'include\openssl\ssl.h') } | Select-Object -First 1
+        if (-not $root) { throw "找不到 OpenSSL 根目录（候选: $($cands -join ', ')）" }
+        $lib = Get-ChildItem (Join-Path $root 'lib') -Filter 'libcrypto.lib' -Recurse -File |
+               Select-Object -First 1
+        if (-not $lib) { throw "找不到 libcrypto.lib（$root\lib）" }
+        "OPENSSL_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "OPENSSL_LIB_DIR=$($lib.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "OPENSSL_INCLUDE_DIR=$root\include" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        Write-Host "OpenSSL root: $root"

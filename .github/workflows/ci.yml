@@ -86,17 +86,15 @@ jobs:
 
   # Keeps the rdkafka path compiling without a live broker: real_conformance is
   # #[ignore]d and needs the Docker cluster (R100).
+  # T112: 这条 job 以前只跑 `cargo check`（不链接），于是「real 编不过」只有打 tag 才暴露
+  # （v0.1.1 的 4/5 平台就是这么红的）。现在改用与 release 相同的依赖动作，并真实链接。
   real-check:
     name: real feature check
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Linux 系统依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libssl-dev pkg-config cmake build-essential
+      - uses: ./.github/actions/real-deps
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -104,5 +102,5 @@ jobs:
         with:
           workspaces: .
 
-      - name: 检查 real 特性
-        run: cargo check -p kafka-driver --features real
+      - name: 构建 real 驱动（真实链接）
+        run: cargo build -p main-bin --features real --locked
