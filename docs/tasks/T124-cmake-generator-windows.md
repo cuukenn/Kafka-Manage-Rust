@@ -69,3 +69,8 @@ CMake Error: Could not create named generator Visual Studio 18 2026
 - 本机复现确认了失败形态（CMake 4.4.4 对未知生成器输出的正是 annotation 里那堆清单）。
 - `release.yml`：+1 步（CMake 生成器）+ 失败上报改成 grep 挑行；`.github/` 改动，**0 行源码**。
 - 判据在下一轮：Windows 是否过、以及 `CMAKE_GENERATOR` 的 notice 是否出现。
+
+## 结果补充（第五轮 run 39057524891）
+
+`CMAKE_GENERATOR=NMake Makefiles` 之后 `windows-x86_64` 通过，六个 job 全绿，Release `v0.1.5` 出五个产物。
+本卡是这条 Windows 链（T120→T124）的最后一环；验收细节见 `T125-release-v015-acceptance.md`。
