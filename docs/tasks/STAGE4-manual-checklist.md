@@ -58,6 +58,8 @@
 
 34. **T113**：下一次打 tag 后到 Releases 页确认 —— release **只被创建一次**（不会出现 `already_exists` 导致的产物缺失），正文里 `**Full Changelog**` **只出现一次**（v0.1.0 曾重复 5 次）；五个平台的产物仍齐全；Actions 里能看到 `build` 五个 job 各自上传 artifact、随后 `release` job 汇总发布。本机无法执行 Actions，须在推送后确认。
 
+35. **T114**：下次打 tag 时，若 tag 与 `Cargo.toml` 的 `[workspace.package] version` 不一致（例如 tag `v9.9.9` 而文件里是 `0.1.0`），`release` workflow 应在 **第一个 job `version-guard`** 就红，且 `build`/`release` 一个都不启动（Actions 页看不到五个平台 runner）；tag 与版本一致时照常发布。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

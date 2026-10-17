@@ -91,6 +91,7 @@
 - ✅ **T111（阶段 11 · 缺陷修复，2026-10-17）**：v0.1.1 只有 1 个产物、4 个 job 全红的根因查清了——T110 的 `--features real` 让 librdkafka 的 C 源码参与构建，而 `rdkafka_conf.c:60` 的 `#include <curl/curl.h>` 由 **`WITH_OAUTHBEARER_OIDC`** 守卫（不是 `WITH_CURL`），`rdkafka-sys` 又无条件 `WITH_SASL_OAUTHBEARER=1`，于是三个平台都需要 curl 头。Docker 里照抄 workflow 的 apt 清单复现出同样的报错与 101；改为给 rdkafka 打开 `curl` feature（`curl-sys` 提供头/库）后，同一容器**不装任何 curl 开发包**即 `CARGO_EXIT=0`；本机 `--features real` 与随后 `--locked` 构建都绿；Windows 的 OpenSSL 探测也按镜像真实布局改正（根 `C:\Program Files\OpenSSL`，在 `lib\` 下递归找 `libcrypto.lib`），DLL 改 glob 取名。真实验收待下一次打 tag（R130–R132）。
 - ✅ **T112（阶段 11 · 缺陷修复，2026-10-17）**：T110/T111 那类问题**都只在链接期暴露**，而 `ci.yml` 的 `real-check` 一直只跑 `cargo check -p kafka-driver --features real`（不链接）⇒ CI 拦不住。本卡把它升为 **`cargo build -p main-bin --features real --locked`**，并把两个 workflow 里重复的三平台依赖准备抽成复合作 `.github/actions/real-deps/action.yml`（Linux apt 全清单 / macOS keg-only `openssl@3` / Windows 按镜像真实布局找 `libcrypto.lib`），一处维护且保住 R98 的对齐（R133–R135）。
 - ✅ **T113（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 的五个平台 job 曾是**五个写者**——各自调一次 `action-gh-release`，于是撞 `already_exists`、且 `generate_release_notes` 被各追加一次（v0.1.0 正文里 `**Full Changelog**` 原样出现 **5 次**，实证）。本卡拆成两阶段：`build` 只构建并 `upload-artifact`（`contents: read`），新增 `release` job（`needs: build`、`contents: write`）下载全部 artifact 后**只发布一次**；产物命名与矩阵一字未改（R136–R138）。
+- ✅ **T114（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 提取版本时只做 `${GITHUB_REF_NAME#v}`、从不校验它是否等于产物里编进去的版本——打 `v1.2.3` 这种与 `Cargo.toml` 不符的 tag 会发出一批「文件名写着 1.2.3、程序却报 0.1.0」的产物且无人拦截（T109 列的遗留项）。新增 `version-guard` job（早于工具链安装、`awk` 取 `[workspace.package] version` 后比对，不等则 `::error::` + `exit 1`），`build` 加 `needs: version-guard`（R139–R140）。干跑：`v0.1.0` 过、`v9.9.9` 退出码 1。
 
 ---
 
@@ -274,6 +275,7 @@
 | T111 | 修 release 的 4/5 平台失败：librdkafka 需要 curl 头 | T110 | 手动（Docker 复现 + 本机 --locked 构建） | ✅（根 `Cargo.toml` 的 rdkafka 加 `curl` feature，由 `curl-sys` 提供头/库；`Cargo.lock` +16 行新增 `curl-sys`；Linux 容器复现 exit 101 → 修后 `CARGO_EXIT=0`；Windows OpenSSL 探测按镜像真实布局重写；R130–R132） |
 | T112 | CI 也真实编译 real 驱动（共用 `real-deps` 复合作） | T110 | 手动（YAML 解析 + 与 release.yml 共用同一份） | ✅（新增 `.github/actions/real-deps/action.yml` 把三平台依赖准备抽成一处，`ci.yml` 与 `release.yml` 共用；`real-check` 由 `cargo check` 升为 **`cargo build -p main-bin --features real --locked`** ⇒ 链接期问题 CI 即可拦住；`release.yml` 步序仍 12 步；R133–R135） |
 | T113 | release 发布改成「先传 artifact、再单点发布」 | T112 | 手动（YAML 解析 + 结构核对） | ✅（`build` 五 job 不再各自发布，改为 `upload-artifact@v4`；新增 `needs: build` 的 `release` job 汇总之**一次** `action-gh-release`；顶部权限收紧为 `contents: read`；正文重复 5 次与 `already_exists` 竞态同时消掉；R136–R138） |
+| T114 | 版本护栏：tag 必须等于 `Cargo.toml` 的 workspace 版本 | T113 | 手动（YAML 解析 + 护栏逻辑干跑） | ✅（`release.yml` +27/−0：新增 `version-guard` job 在装工具链之前用 `awk` 取 `[workspace.package] version` 与 tag 比对，不等即红；`build` 加 `needs` ⇒ 版本不对时五个 runner 一个都不起；R139–R140） |
 
 ---
 
