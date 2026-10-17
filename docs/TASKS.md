@@ -93,6 +93,7 @@
 - ✅ **T113（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 的五个平台 job 曾是**五个写者**——各自调一次 `action-gh-release`，于是撞 `already_exists`、且 `generate_release_notes` 被各追加一次（v0.1.0 正文里 `**Full Changelog**` 原样出现 **5 次**，实证）。本卡拆成两阶段：`build` 只构建并 `upload-artifact`（`contents: read`），新增 `release` job（`needs: build`、`contents: write`）下载全部 artifact 后**只发布一次**；产物命名与矩阵一字未改（R136–R138）。
 - ✅ **T114（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 提取版本时只做 `${GITHUB_REF_NAME#v}`、从不校验它是否等于产物里编进去的版本——打 `v1.2.3` 这种与 `Cargo.toml` 不符的 tag 会发出一批「文件名写着 1.2.3、程序却报 0.1.0」的产物且无人拦截（T109 列的遗留项）。新增 `version-guard` job（早于工具链安装、`awk` 取 `[workspace.package] version` 后比对，不等则 `::error::` + `exit 1`），`build` 加 `needs: version-guard`（R139–R140）。干跑：`v0.1.0` 过、`v9.9.9` 退出码 1。
 - ✅ **T115（阶段 11 · 缺陷修复，2026-10-17）**：`v0.1.3` 的 release **失败**——job `tag matches Cargo.toml` 第 3 步红、`build`×5 与 `publish release` 全部 skipped。根因是 **T114 的护栏按设计开火**：tag 说 0.1.3、`[workspace.package] version` 还是 0.1.0（T114 正是为拦这种漂移而加：`v0.1.2` 的产物名是 0.1.2，二进制却自称 0.1.0）。缺的是「发布时同步版本」这条路，故新增 `scripts/release.sh <version>`（bump + `cargo update --workspace` 刷 lock + commit + tag + push，带 `--dry-run`），并把工作区版本提为 0.1.3（R141–R143）。
+- ✅ **T116（阶段 11 · 缺陷修复，2026-10-17）**：`v0.1.3` 打出并全绿——run **39011872955** 的 `tag matches Cargo.toml` + 五平台 build + `publish release` **7/7 success**，Release 五个产物齐全（windows zip 5 641 464 B ⇒ 真的链进了 librdkafka + OpenSSL），正文 `**Full Changelog**` 由 v0.1.2 的 5 次降为 **1 次**。这是本项目第一个「五平台 + real 驱动 + 单写者发布 + 版本护栏」全通的 release；唯一未直接取证的是 zip 内两个 DLL（本机 `github.com` 不可达，改由打包步骤的 `throw` 背书）。
 
 ---
 
@@ -277,6 +278,7 @@
 | T112 | CI 也真实编译 real 驱动（共用 `real-deps` 复合作） | T110 | 手动（YAML 解析 + 与 release.yml 共用同一份） | ✅（新增 `.github/actions/real-deps/action.yml` 把三平台依赖准备抽成一处，`ci.yml` 与 `release.yml` 共用；`real-check` 由 `cargo check` 升为 **`cargo build -p main-bin --features real --locked`** ⇒ 链接期问题 CI 即可拦住；`release.yml` 步序仍 12 步；R133–R135） |
 | T113 | release 发布改成「先传 artifact、再单点发布」 | T112 | 手动（YAML 解析 + 结构核对） | ✅（`build` 五 job 不再各自发布，改为 `upload-artifact@v4`；新增 `needs: build` 的 `release` job 汇总之**一次** `action-gh-release`；顶部权限收紧为 `contents: read`；正文重复 5 次与 `already_exists` 竞态同时消掉；R136–R138） |
 | T114 | 版本护栏：tag 必须等于 `Cargo.toml` 的 workspace 版本 | T113 | 手动（YAML 解析 + 护栏逻辑干跑） | ✅（`release.yml` +27/−0：新增 `version-guard` job 在装工具链之前用 `awk` 取 `[workspace.package] version` 与 tag 比对，不等即红；`build` 加 `needs` ⇒ 版本不对时五个 runner 一个都不起；R139–R140） |
+| T116 | release 端到端验收（v0.1.3） | T111,T113,T114 | 手动（Actions API + Releases API） | ✅（run 39011872955 7/7 success；五平台产物齐全；正文 `**Full Changelog**` 由 5 次降为 **1 次**；Linux 两个 job 绿；DLL 一项因本机 `github.com` 不可达未能解压确认，改由 workflow 的 throw 逻辑背书；R144–R145） |
 | T115 | 发布版本同步：tag 与 `Cargo.toml` 不一致导致的 v0.1.3 失败 | T114 | 手动（`scripts/release.sh` 干跑 + 护栏核对） | ✅（新增 `scripts/release.sh`：格式/tag 重名/脏树/同版本四道拒绝，bump 后跑 `cargo update --workspace` 刷 `Cargo.lock`（release 用 `--locked`，不同步会直接失败），再 commit+tag+push；并把 `[workspace.package] version` 由 0.1.0 提为 **0.1.3**（`Cargo.lock` 五个成员同步）；v0.1.3 失败的根因即 T114 护栏按设计开火；R141–R143） |
 
 ---

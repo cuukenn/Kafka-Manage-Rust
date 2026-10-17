@@ -52,13 +52,13 @@
 30. **T105**：消费页需人工确认两处表达——(a) 主题列表含内部主题（`__consumer_offsets` 等）时，默认选中应落在**非 `__` 开头**的主题上；(b) 订阅一个**空的**主题后，消息表应显示「已订阅，当前没有可读消息：该 topic 暂时是空的…」，而不是只显示「暂无消息」；若手选的是 `__*` 主题，还应追加「这是 Kafka 内部 topic，通常没有业务数据」。想看真实数据：主题页新建一个 topic（如 `demo`）→ 生产页发几条 → 回消费页选 `demo` 订阅，行应实时出现。
 31. **T106**：消费页订阅后**切到别的 tab 再切回来**——页面状态应仍是「订阅中」，行数继续增长（不再被当成「离开页面」而取消）。同时确认切回时主题下拉仍是最新的（先在主题页新建 `demo`，切回消费页应能看到它）；关闭应用后重开，订阅不应残留（T063 teardown 仍生效）。
 
-32. **T111**：下一次打 tag（如 `v0.1.2`）后到 Releases 页确认 —— 五个平台的产物都在（`linux-aarch64` / `linux-x86_64` / `macos-arm64` / `macos-x86_64` / `windows-x86_64`）；Linux 两个 job 不再报 `curl/curl.h: No such file or directory`；Windows 的 zip 里除 exe 还有 `libcrypto-*.dll` 与 `libssl-*.dll`，解压后能直接启动。
+32. **T111**：下一次打 tag（如 `v0.1.2`）后到 Releases 页确认 —— 五个平台的产物都在（`linux-aarch64` / `linux-x86_64` / `macos-arm64` / `macos-x86_64` / `windows-x86_64`）；Linux 两个 job 不再报 `curl/curl.h: No such file or directory`；Windows 的 zip 里除 exe 还有 `libcrypto-*.dll` 与 `libssl-*.dll`，解压后能直接启动。　→ **2026-10-17 v0.1.3 已跑通，见 `docs/tasks/T116-release-acceptance.md`**（五项产物齐全、正文不重复、Linux 两个 job 绿；仅「zip 内含两个 DLL」仍未人工解压确认）。
 
 33. **T112**：推送后到 GitHub Actions 看 `ci` workflow（push/PR 即触发，**不必打 tag**）——`real feature check` job 应**真正编译并链接** `main-bin --features real`（不再秒过），日志里能看到 `real-deps` 复合作按 runner 平台走不同分支（Linux 装 apt 全清单 / macOS 装 keg-only `openssl@3` / Windows 在 `C:\Program Files\OpenSSL` 下递归找到 `libcrypto.lib`）。本机无法执行 Actions，此项须在推送后确认。
 
-34. **T113**：下一次打 tag 后到 Releases 页确认 —— release **只被创建一次**（不会出现 `already_exists` 导致的产物缺失），正文里 `**Full Changelog**` **只出现一次**（v0.1.0 曾重复 5 次）；五个平台的产物仍齐全；Actions 里能看到 `build` 五个 job 各自上传 artifact、随后 `release` job 汇总发布。本机无法执行 Actions，须在推送后确认。
+34. **T113**：下一次打 tag 后到 Releases 页确认 —— release **只被创建一次**（不会出现 `already_exists` 导致的产物缺失），正文里 `**Full Changelog**` **只出现一次**（v0.1.0 曾重复 5 次）；五个平台的产物仍齐全；Actions 里能看到 `build` 五个 job 各自上传 artifact、随后 `release` job 汇总发布。本机无法执行 Actions，须在推送后确认。　→ **2026-10-17 v0.1.3 已跑通，见 `docs/tasks/T116-release-acceptance.md`**（五项产物齐全、正文不重复、Linux 两个 job 绿；仅「zip 内含两个 DLL」仍未人工解压确认）。
 
-35. **T114**：下次打 tag 时，若 tag 与 `Cargo.toml` 的 `[workspace.package] version` 不一致（例如 tag `v9.9.9` 而文件里是 `0.1.0`），`release` workflow 应在 **第一个 job `version-guard`** 就红，且 `build`/`release` 一个都不启动（Actions 页看不到五个平台 runner）；tag 与版本一致时照常发布。
+35. **T114**：下次打 tag 时，若 tag 与 `Cargo.toml` 的 `[workspace.package] version` 不一致（例如 tag `v9.9.9` 而文件里是 `0.1.0`），`release` workflow 应在 **第一个 job `version-guard`** 就红，且 `build`/`release` 一个都不启动（Actions 页看不到五个平台 runner）；tag 与版本一致时照常发布。　→ **2026-10-17 v0.1.3 已跑通，见 `docs/tasks/T116-release-acceptance.md`**（五项产物齐全、正文不重复、Linux 两个 job 绿；仅「zip 内含两个 DLL」仍未人工解压确认）。
 
 36. **T115**：发布流程改为走 `scripts/release.sh <version>`——先 `--dry-run` 看清会改什么，真跑后本地应多出 `chore(release): vX.Y.Z` 提交与同名 annotated tag，且推送后 `version-guard` job 通过；同时确认 `Cargo.lock` 里五个成员版本与 tag 一致（否则 `--locked` 构建会失败）。另：`v0.1.3` 的 tag 已被重新指向带 0.1.3 版本的提交，Actions 里应有一次新的运行。
 
