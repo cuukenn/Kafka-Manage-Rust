@@ -1,7 +1,6 @@
 # T112: 构建 --features real 所需的系统依赖，CI 与 release 共用一份。
-# T119: OpenSSL 改走 rdkafka 的 ssl-vendored（从源码编、静态链进二进制），
-#       所以 macOS 的 brew openssl@3 与 Windows 的 OpenSSL 探测整段删除——
-#       产物不再依赖 runner 上的 OpenSSL 路径。
+# T119: OpenSSL 改走 rdkafka 的 ssl-vendored（从源码编、静态链进二进制）。
+# T122: Windows 上编 OpenSSL 需要 core 模块齐全的 perl —— runner PATH 上那个是裁剪过的。
 name: real-driver deps
 description: 构建 --features real 所需的系统依赖
 runs:
@@ -12,9 +11,30 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        # webkit/gtk/rsvg 是 tao+wry 的编译期与运行期依赖；perl 给 openssl-src 编 OpenSSL。
+        # webkit/gtk/rsvg 是 tao+wry 的编译期与运行期依赖。
         # 不再装 libssl-dev：装了也不会用（vendored 的 root 排在 CMAKE_PREFIX_PATH 最前），
         # 留着只会让「产物链了系统 OpenSSL」这件事重新变得不可见。
         sudo apt-get install -y --no-install-recommends \
           libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
           pkg-config cmake build-essential perl
+
+    - name: Perl（Windows · openssl-src 要编 OpenSSL）
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # v0.1.5 第二轮的失败正文：Can't locate Locale/Maketext/Simple.pm in @INC
+        # （@INC 里是 /usr/lib/perl5/core_perl 这类 MSYS 路径）⇒ PATH 上的 perl 是
+        # Git for Windows 带的裁剪版，OpenSSL 的 ./Configure 直接 exit 2。
+        # Strawberry 的 core 模块齐全，是 Windows 上编 OpenSSL 的常规选择。
+        $straw = "C:\Strawberry\perl\bin\perl.exe"
+        if (-not (Test-Path $straw)) {
+          choco install strawberryperl -y --no-progress --limit-output | Out-Null
+        }
+        if (-not (Test-Path $straw)) { throw "Strawberry perl 没装上：$straw 不存在" }
+        "C:\Strawberry\c\bin", "C:\Strawberry\perl\site\bin", "C:\Strawberry\perl\bin" |
+          Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        # 自检放在这里：缺模块就当场红，别让它变成 openssl-src 的一句 'perl' reported failure。
+        & $straw -MLocale::Maketext::Simple -e "exit 0"
+        if ($LASTEXITCODE -ne 0) { throw "Strawberry perl 缺 Locale::Maketext::Simple" }
+        $pathPerl = (where.exe perl | Select-Object -First 1)
+        Write-Host "::notice::perl pinned to $straw | PATH currently resolves perl to $pathPerl"
