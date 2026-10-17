@@ -96,6 +96,7 @@
 - ✅ **T116（阶段 11 · 缺陷修复，2026-10-17）**：`v0.1.3` 打出并全绿——run **39011872955** 的 `tag matches Cargo.toml` + 五平台 build + `publish release` **7/7 success**，Release 五个产物齐全（windows zip 5 641 464 B ⇒ 真的链进了 librdkafka + OpenSSL），正文 `**Full Changelog**` 由 v0.1.2 的 5 次降为 **1 次**。这是本项目第一个「五平台 + real 驱动 + 单写者发布 + 版本护栏」全通的 release；唯一未直接取证的是 zip 内两个 DLL（本机 `github.com` 不可达，改由打包步骤的 `throw` 背书）。
 - ✅ **T118（阶段 11 · 缺陷修复，2026-10-17）**：`v0.1.3` 与 `v0.1.4` 两次打 tag 都因 T114 的 `version-guard` 在第一个 job 就红、五个平台 job 全跳过（run 39011500119、39020365165）。而全仓 grep `CARGO_PKG_VERSION` **零命中** ⇒ 护栏在防一个没人观测的不一致（产物名来自 tag，`[workspace.package] version` 只是 crate 元数据），代价却是每次发布前的手工 bump。已删除该 job 与 `build.needs`；`docs/development.md` 发布节改为「打 tag 就行」，`scripts/release.sh` 降级为可选（R146–R147）。发布流程回到：打 tag → 触发 → 五平台各自编译 → 汇总上 Release。
 - ✅ **T119（阶段 11 · 缺陷修复，2026-10-18）**：用户报「产物不能直接运行」——根因是产物链了 runner 上的 Homebrew OpenSSL（用户看到的 `/usr/local/opt/openssl@3/lib/libssl.3.dylib` 即 Intel runner 路径，本机同一条命令链的是 `/opt/homebrew/...` 那两个 dylib）。`rdkafka` 的 `ssl` 改为 `ssl-vendored` 后 OpenSSL 从源码静态编进二进制：本机 `otool -L` 的 openssl 依赖归零，5 863 072 → 9 982 400 B，编译多 2m33s 里的一段。Windows 包不再发 DLL，`real-deps` 从 3 步缩到 1 步。产物名同时改成 `名称-版本号-架构-格式`（架构用完整 target 三元组，五者唯一）。R148–R150。
+- 🔄 **T120（阶段 11 · 缺陷修复，2026-10-18）**：`v0.1.5` 的 Release Build 里四个平台绿、`windows-x86_64` 在「编译 release 二进制」步红（exit 101），`publish release` 被 skip ⇒ Release 不存在。同一 push 的 `real feature check` 绿，说明 vendored OpenSSL 在 Linux 成立、问题只在 MSVC：Windows 镜像没有 nmake/vcvars，而 `openssl-src` 在 MSVC 上要跑 `nmake install`。同时给 build/test 步加 `::error::` 包装——匿名身份读不到 logs（404）但读得到 annotations（200），这是唯一不需要凭据的失败可读通道（R151–R152）。
 
 ---
 
@@ -283,6 +284,7 @@
 | T116 | release 端到端验收（v0.1.3） | T111,T113,T114 | 手动（Actions API + Releases API） | ✅（run 39011872955 7/7 success；五平台产物齐全；正文 `**Full Changelog**` 由 5 次降为 **1 次**；Linux 两个 job 绿；DLL 一项因本机 `github.com` 不可达未能解压确认，改由 workflow 的 throw 逻辑背书；R144–R145） |
 | T118 | 撤掉 tag/版本护栏：打 tag 就该能发布 | T114 | 手动（YAML 解析 + `CARGO_PKG_VERSION` 取证） | ✅（删除 `version-guard` job 与 `build.needs`，`jobs` 只剩 build+release；全仓 grep `CARGO_PKG_VERSION` 零命中——护栏拦的是没人读的元数据，却让 `v0.1.3`/`v0.1.4` 两次发布五个平台全跳过；R146–R147） |
 | T119 | 产物自包含（vendored OpenSSL）+ 名称-版本号-架构-格式 | T110,T112 | 手动（`otool -L` + YAML + 上游源码取证） | ✅（`ssl`→`ssl-vendored`：本机 `otool -L` 的 Homebrew dylib 依赖归零，5.9→10.0 MB；产物名改 target 三元组，五者唯一；Windows 不再发 DLL；R148–R150） |
+| T120 | Windows 的 real 构建修复（MSVC 开发环境）+ 失败日志改走 annotation | T119 | Actions API（annotations） | 🔄（v0.1.5：`windows-x86_64` 在 build 步红、publish skipped、Release 404；`real feature check` 绿 ⇒ 问题只在 MSVC；R151–R152） |
 | T115 | 发布版本同步：tag 与 `Cargo.toml` 不一致导致的 v0.1.3 失败 | T114 | 手动（`scripts/release.sh` 干跑 + 护栏核对） | ✅（新增 `scripts/release.sh`：格式/tag 重名/脏树/同版本四道拒绝，bump 后跑 `cargo update --workspace` 刷 `Cargo.lock`（release 用 `--locked`，不同步会直接失败），再 commit+tag+push；并把 `[workspace.package] version` 由 0.1.0 提为 **0.1.3**（`Cargo.lock` 五个成员同步）；v0.1.3 失败的根因即 T114 护栏按设计开火；R141–R143） |
 
 ---

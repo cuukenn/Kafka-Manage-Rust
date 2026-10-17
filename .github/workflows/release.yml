@@ -70,9 +70,27 @@ jobs:
       # T110: --features real 让产物自带真实 Kafka 驱动。Mock 只是默认驱动，
       # 不带 real 的话用户下载到的二进制连不上任何真实集群（会报
       # "real Kafka driver is not compiled in"）。
+      # T120: vendored OpenSSL 在 MSVC 上要跑 nmake/cl，而 Windows 镜像默认没把 VS 开发环境
+      # 放进 PATH（工具列表里只有 CMake，没有 nmake/vcvars）—— 先把它拉进来。
+      - name: MSVC 开发环境（Windows）
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # T120: 匿名身份读不到 job 日志（logs 端点 404），但 annotations 读得到。
+      # 失败时把日志尾部打成 ::error::，不用人肉贴日志也能定位真正的报错。
       - name: 编译 release 二进制（含 real 驱动）
         shell: bash
-        run: cargo build --release -p main-bin --target "$TARGET" --locked --features real
+        run: |
+          set +e
+          cargo build --release -p main-bin --target "$TARGET" --locked --features real 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            tail -n 25 build.log | while IFS= read -r line; do
+              line="${line//%/25}"; line="${line//\"/%22}"
+              printf '::error::%s\n' "$line"
+            done
+          fi
+          exit "$status"
 
       # 先收进 staging/：T119 之后各平台都只有裸二进制（OpenSSL 已静态编进去）。
       - name: 准备产物文件
