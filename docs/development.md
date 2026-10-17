@@ -66,38 +66,27 @@ frontend/             # Vue3 + Vite + Tailwind 4 源码（dist 在编译期嵌�
 - 命令域：`cluster.* / topic.* / produce.* / consume.* / group.* / config.* / mock.* / request.cancel`
 - 事件名：`connection.state`、`message.received`、`subscription.state`、`subscription.done`、`topic.changed`、`group.changed`、`produce.result`、`log.line`、`error`
 
-## 构建真实驱动（openssl 的坑）
+## 构建真实驱动（OpenSSL 自带，不依赖本机）
 
-`cargo run -p main-bin --features real` 在 macOS 上会踩到一个跟本仓库无关、但一定会遇到的坑：Homebrew 默认的 `openssl` 已经是 **4.x**，而 OpenSSL 4 **不再导出 ENGINE API**，vendored 的 librdkafka 2.12.1 仍在 `rdkafka_ssl.c` 里调用 `ENGINE_*`，于是链接失败：
+`--features real` 现在把 OpenSSL **编进二进制**：根 `Cargo.toml` 的 `rdkafka` 用 `ssl-vendored`
+（⇒ `rdkafka-sys/ssl-vendored` ⇒ `openssl-sys/vendored`），`openssl-src` 从源码编出
+`libssl.a` / `libcrypto.a` 静态链入；`rdkafka-sys` 的 `config.register_dep("openssl")` 把
+vendored 的 root 排在 `CMAKE_PREFIX_PATH` 最前（`cmake` crate `src/lib.rs:565-570`），所以
+librdkafka 的 `find_package(OpenSSL)` 用的是自带的那份。
 
-```
-Undefined symbols for architecture arm64:
-  "_ENGINE_by_id", referenced from: _rd_kafka_ssl_ctx_init_engine ...
-```
-
-openssl@3 是 **keg-only** 的，pkg-config 默认找不到它。脚本 `scripts/real-run.sh` 做的就是这两行环境变量，参数可透传（`build` / `check` 都行）：
-
-```sh
-export OPENSSL_DIR="$(brew --prefix openssl@3)"
-export PKG_CONFIG_PATH="$OPENSSL_DIR/lib/pkgconfig"
-cargo run -p main-bin --features real
-
-# 或者直接：
-./scripts/real-run.sh
+```bash
+cargo build --release -p main-bin --features real --locked
+otool -L target/release/main-bin | grep -iE 'openssl|libssl|libcrypto'   # 应为空
 ```
 
-嫌每次导出麻烦，就把它钉在**机器级** `~/.cargo/config.toml`。它只影响本机的 cargo 构建，且 `force` 默认为 `false`——已显式设置的环境变量仍然优先，CI runner 自带的值也不会被覆盖：
+本机实测（2026-10-17，`env -u OPENSSL_DIR -u PKG_CONFIG_PATH`）：非系统依赖**没有任何
+Homebrew 路径**，只剩 `/usr/lib/*` 与 `/System/Library/Frameworks/*`；二进制 5.9 MB → 10.0 MB，
+编译多花约 2~3 分钟。
 
-```toml
-# ~/.cargo/config.toml
-[env]
-OPENSSL_DIR = "/opt/homebrew/opt/openssl@3"
-PKG_CONFIG_PATH = "/opt/homebrew/opt/openssl@3/lib/pkgconfig"
-```
-
-⚠️ `cargo check` 不链接，所以上面环境缺失时它照样「通过」——只有 `cargo build` / `cargo run` 会暴露这个链接错误。
-
-没开 `real` 时非 mock 集群不会崩，而是给出明确错误：`real Kafka driver is not compiled in; rebuild with --features real`。
+> 为什么非改不可：`v0.1.0`~`v0.1.4` 的 macOS 产物里写着
+> `/usr/local/opt/openssl@3/lib/libssl.3.dylib`（Intel runner 的 Homebrew 路径）——下载方没有
+> 这个路径就起不来，「产物不能直接运行」就是这一条。
+> 历史：T104 的 openssl@4 / `_ENGINE_by_id` 链接坑随 vendored 一并失效。
 
 ## 本地开发用 broker（可选）
 

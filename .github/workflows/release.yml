@@ -31,15 +31,14 @@ jobs:
       APP_NAME: rs-kafka-ui-client # 软件名（产物名前缀）
       BIN: main-bin                 # cargo 二进制名（构建后重命名为 APP_NAME）
       PLATFORM: ${{ matrix.platform }}
-      ARCH: ${{ matrix.arch }}
       TARGET: ${{ matrix.target }}
       EXT: ${{ matrix.ext }}
 
     steps:
       - uses: actions/checkout@v4
 
-      # T112: Linux 系统库 / macOS openssl@3 / Windows OpenSSL 的准备工作抽成复合动作，
-      # 与 ci.yml 共用同一份，避免继续漂移（R98 的同源要求）。
+      # T112: 系统依赖抽成复合动作，与 ci.yml 共用同一份，避免继续漂移（R98 的同源要求）。
+      # T119: 里面只剩 Linux 的 webkit/gtk —— OpenSSL 改走 ssl-vendored，三平台都不再需要。
       - uses: ./.github/actions/real-deps
 
       - name: 提取版本（tag v0.1.0 → 0.1.0）
@@ -75,7 +74,7 @@ jobs:
         shell: bash
         run: cargo build --release -p main-bin --target "$TARGET" --locked --features real
 
-      # 先收进 staging/：Windows 还要把 OpenSSL 的 DLL 放在 exe 旁边一起发。
+      # 先收进 staging/：T119 之后各平台都只有裸二进制（OpenSSL 已静态编进去）。
       - name: 准备产物文件
         shell: bash
         run: |
@@ -91,15 +90,9 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          # real 驱动动态链接 OpenSSL：DLL 必须与 exe 同目录，否则用户侧启动即失败。
-          # 用 glob 取而不是硬编码 -3-x64，兼容将来换主版本/架构。
-          foreach ($pattern in @("libcrypto-*.dll", "libssl-*.dll")) {
-            $dll = Get-ChildItem -Path (Join-Path $env:OPENSSL_DIR "bin") -Filter $pattern -File -ErrorAction SilentlyContinue |
-                   Select-Object -First 1
-            if (-not $dll) { throw "缺少 $pattern（$env:OPENSSL_DIR\bin）" }
-            Copy-Item $dll.FullName staging\
-          }
-          $name = "$env:APP_NAME-$env:VERSION-$env:PLATFORM-$env:ARCH"
+          # T119: OpenSSL 已由 ssl-vendored 静态编进 exe，不再需要随包发 DLL。
+          # T119: 名称-版本号-架构-格式，架构用完整 target 三元组（唯一，不会 aarch64 撞名）。
+          $name = "$env:APP_NAME-$env:VERSION-$env:TARGET"
           Compress-Archive -Path staging\* -DestinationPath "$name.zip" -Force
           "ASSET=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -107,7 +100,8 @@ jobs:
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          NAME="${APP_NAME}-${VERSION}-${PLATFORM}-${ARCH}"
+          # T119: 名称-版本号-架构-格式（与 Windows 步同一套命名）。
+          NAME="${APP_NAME}-${VERSION}-${TARGET}"
           tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
           echo "ASSET=${NAME}.tar.gz" >> "$GITHUB_ENV"
 

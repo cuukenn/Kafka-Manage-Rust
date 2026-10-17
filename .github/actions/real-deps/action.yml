@@ -1,4 +1,7 @@
 # T112: 构建 --features real 所需的系统依赖，CI 与 release 共用一份。
+# T119: OpenSSL 改走 rdkafka 的 ssl-vendored（从源码编、静态链进二进制），
+#       所以 macOS 的 brew openssl@3 与 Windows 的 OpenSSL 探测整段删除——
+#       产物不再依赖 runner 上的 OpenSSL 路径。
 name: real-driver deps
 description: 构建 --features real 所需的系统依赖
 runs:
@@ -9,30 +12,9 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config cmake build-essential
-
-    - name: OpenSSL 环境（macOS）
-      if: runner.os == 'macOS'
-      shell: bash
-      run: |
-        export HOMEBREW_NO_AUTO_UPDATE=1
-        brew install openssl@3
-        prefix="$(brew --prefix openssl@3)"
-        echo "OPENSSL_DIR=${prefix}" >> "$GITHUB_ENV"
-        echo "PKG_CONFIG_PATH=${prefix}/lib/pkgconfig" >> "$GITHUB_ENV"
-
-    - name: OpenSSL 环境（Windows）
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $cands = @("$env:ProgramFiles\OpenSSL", "C:\OpenSSL-Win64")
-        $root = $cands | Where-Object { Test-Path (Join-Path $_ 'include\openssl\ssl.h') } | Select-Object -First 1
-        if (-not $root) { throw "找不到 OpenSSL 根目录（候选: $($cands -join ', ')）" }
-        $lib = Get-ChildItem (Join-Path $root 'lib') -Filter 'libcrypto.lib' -Recurse -File |
-               Select-Object -First 1
-        if (-not $lib) { throw "找不到 libcrypto.lib（$root\lib）" }
-        "OPENSSL_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "OPENSSL_LIB_DIR=$($lib.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "OPENSSL_INCLUDE_DIR=$root\include" | Out-File -FilePath $env:GITHUB_ENV -Append
-        "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-        Write-Host "OpenSSL root: $root"
+        # webkit/gtk/rsvg 是 tao+wry 的编译期与运行期依赖；perl 给 openssl-src 编 OpenSSL。
+        # 不再装 libssl-dev：装了也不会用（vendored 的 root 排在 CMAKE_PREFIX_PATH 最前），
+        # 留着只会让「产物链了系统 OpenSSL」这件事重新变得不可见。
+        sudo apt-get install -y --no-install-recommends \
+          libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+          pkg-config cmake build-essential perl

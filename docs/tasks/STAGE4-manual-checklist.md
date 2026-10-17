@@ -62,6 +62,8 @@
 
 36. **T115**：发布流程改为走 `scripts/release.sh <version>`——先 `--dry-run` 看清会改什么，真跑后本地应多出 `chore(release): vX.Y.Z` 提交与同名 annotated tag，且推送后 `version-guard` job 通过；同时确认 `Cargo.lock` 里五个成员版本与 tag 一致（否则 `--locked` 构建会失败）。另：`v0.1.3` 的 tag 已被重新指向带 0.1.3 版本的提交，Actions 里应有一次新的运行。
 
+37. **T119**：从最新 Release 下载 `rs-kafka-ui-client-<ver>-aarch64-apple-darwin.tar.gz`，解压后**直接** `./rs-kafka-ui-client` 应能启动——**这台机器不装 Homebrew `openssl@3` 也要能起**；`otool -L` 里不应再出现 `openssl` / `libssl` / `libcrypto`。Windows 的 zip 里应只有 `.exe`，不再有 `libcrypto-*.dll` / `libssl-*.dll`。五个产物名应是 `名称-版本号-<target 三元组>.<格式>`（例：`rs-kafka-ui-client-0.1.5-x86_64-unknown-linux-gnu.tar.gz`）。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

@@ -12,7 +12,8 @@ export NVM_DIR="$HOME/.nvm"; source "$NVM_DIR/nvm.sh"; nvm use 22
 cd frontend && npm run build                              # 唯一前端门禁（无 typecheck/lint 脚本）
 
 # 真驱动（需可达 broker）
-./scripts/real-run.sh build -p main-bin --features real    # 脚本自动钉 openssl@3
+cargo build -p main-bin --features real --locked           # T119: OpenSSL 走 ssl-vendored，本机不需要 openssl@3
+./scripts/real-run.sh build -p main-bin --features real    # 仍可用，但它钉的 OPENSSL_DIR 已被 vendored 忽略
 cargo check -p kafka-driver --features real               # ⚠️ check 不链接，不能当「real 能构建」的凭据
 KAFKA_CONFORMANCE_BOOTSTRAP=localhost:9092 cargo test -p kafka-driver --features real -- --ignored
 

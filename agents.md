@@ -18,4 +18,4 @@
 
 ## 验证门禁
 
-见 skill 的 `build-test` 模块。本机首次使用需 `source "$HOME/.cargo/env"`；`--features real` 的构建还需要 openssl@3（用 `./scripts/real-run.sh`，或机器级 `~/.cargo/config.toml`）。
+见 skill 的 `build-test` 模块。本机首次使用需 `source "$HOME/.cargo/env"`；`--features real` 自 T119 起走 `ssl-vendored`（OpenSSL 从源码静态编进二进制），**不再需要本机 openssl@3**；`./scripts/real-run.sh` 仍可用，但它钉的 `OPENSSL_DIR` 已被 vendored 忽略（首次编译多花 2~3 分钟编 OpenSSL）。
