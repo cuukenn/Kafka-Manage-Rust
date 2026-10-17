@@ -46,6 +46,32 @@ jobs:
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev \
             pkg-config cmake build-essential
 
+      # T110: 产物必须带 real 驱动（--features real 会拉入 rdkafka/openssl-sys）。
+      # Linux 的 libssl-dev 已由上面的 apt 清单覆盖；macOS 镜像只带 openssl 1.1.1，
+      # 这里显式钉住 keg-only 的 openssl@3（与 T104 在本机踩到的「默认 openssl 4.x
+      # 不再导出 ENGINE API」同源，故不依赖镜像的默认发现结果）。
+      - name: OpenSSL 环境（macOS）
+        if: runner.os == 'macOS'
+        run: |
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          brew install openssl@3
+          prefix="$(brew --prefix openssl@3)"
+          echo "OPENSSL_DIR=${prefix}" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${prefix}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+
+      # Windows 镜像自带 OpenSSL 3.6.5，但安装位置不保证被 openssl-sys 找到；
+      # 找带 libcrypto.lib 的根目录，显式导出，找不到就直接失败（而不是产出坏产物）。
+      - name: OpenSSL 环境（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $roots = @("$env:ProgramFiles\OpenSSL-Win64", "C:\Program Files\OpenSSL", "C:\OpenSSL-Win64")
+          $root = $roots | Where-Object { Test-Path "$_\lib\libcrypto.lib" } | Select-Object -First 1
+          if (-not $root) { throw "找不到带 libcrypto.lib 的 OpenSSL 安装：--features real 需要它" }
+          Write-Host "OpenSSL: $root"
+          "OPENSSL_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
       - name: 提取版本（tag v0.1.0 → 0.1.0）
         shell: bash
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -72,16 +98,21 @@ jobs:
           npm ci
           npm run build
 
-      - name: 编译 release 二进制
+      # T110: --features real 让产物自带真实 Kafka 驱动。Mock 只是默认驱动，
+      # 不带 real 的话用户下载到的二进制连不上任何真实集群（会报
+      # "real Kafka driver is not compiled in"）。
+      - name: 编译 release 二进制（含 real 驱动）
         shell: bash
-        run: cargo build --release -p main-bin --target "$TARGET" --locked
+        run: cargo build --release -p main-bin --target "$TARGET" --locked --features real
 
+      # 先收进 staging/：Windows 还要把 OpenSSL 的 DLL 放在 exe 旁边一起发。
       - name: 准备产物文件
         shell: bash
         run: |
           OUTBIN="${APP_NAME}"
           [ "$PLATFORM" = "windows" ] && OUTBIN="${APP_NAME}.exe"
-          cp "target/${TARGET}/release/${BIN}" "$OUTBIN"
+          mkdir -p staging
+          cp "target/${TARGET}/release/${BIN}" "staging/${OUTBIN}"
           echo "OUTBIN=${OUTBIN}" >> "$GITHUB_ENV"
 
       # T109: bash 下的 tar 在 windows runner 上会解析到 Git 自带的 GNU tar，而 GNU tar 的
@@ -90,8 +121,14 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          # real 驱动动态链接 OpenSSL：DLL 必须与 exe 同目录，否则用户侧启动即失败
+          foreach ($dll in @("libcrypto-3-x64.dll", "libssl-3-x64.dll")) {
+            $src = Join-Path "$env:OPENSSL_DIR\bin" $dll
+            if (-not (Test-Path $src)) { throw "缺少 $dll（$env:OPENSSL_DIR\bin）" }
+            Copy-Item $src staging\
+          }
           $name = "$env:APP_NAME-$env:VERSION-$env:PLATFORM-$env:ARCH"
-          Compress-Archive -Path "$env:OUTBIN" -DestinationPath "$name.zip" -Force
+          Compress-Archive -Path staging\* -DestinationPath "$name.zip" -Force
           "ASSET=$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: 打包（其他平台 · tar.gz）
@@ -99,7 +136,7 @@ jobs:
         shell: bash
         run: |
           NAME="${APP_NAME}-${VERSION}-${PLATFORM}-${ARCH}"
-          tar -czf "${NAME}.tar.gz" "$OUTBIN"
+          tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
           echo "ASSET=${NAME}.tar.gz" >> "$GITHUB_ENV"
 
       - name: 上传产物到 Release
