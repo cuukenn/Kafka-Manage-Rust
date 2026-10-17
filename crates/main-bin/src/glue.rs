@@ -124,7 +124,10 @@ impl BridgeGuard for ShutdownGuard {
 
 /// Data directory: `dirs::data_local_dir()/rs-kafka-ui-client`, falling back to
 /// kafka-app's own resolution chain when the platform has no local data dir.
-fn data_dir() -> PathBuf {
+///
+/// `pub(crate)` since T083a: `logging::install` puts the rotating log file under
+/// the same directory, and two resolution chains would eventually drift.
+pub(crate) fn data_dir() -> PathBuf {
     match dirs::data_local_dir() {
         Some(base) => base.join(APP_DIR_NAME),
         None => default_data_dir(),

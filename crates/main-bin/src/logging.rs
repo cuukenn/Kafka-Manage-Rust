@@ -5,17 +5,25 @@
 //! [`AppEvent::LogLine`], which the event pump (T037) forwards to the WebView and
 //! the log panel (T049b) renders.
 //!
+//! T083a adds a third sink: the same events also land in
+//! `<data_dir>/logs/app.log`, rotated by size ([`FileWriter`]) so a week-long
+//! session cannot fill the disk.
+//!
 //! The subscriber must be installed on the first line of `main`, but the bus does
 //! not exist yet — it is created with the `App` inside `glue::Assembly`. The layer
 //! therefore publishes through a slot that [`LogBridge::attach`] fills once the
-//! App is up (R73); anything logged in that gap only reaches stderr.
+//! App is up (R73); anything logged in that gap only reaches stderr and the file.
 
 use std::fmt;
-use std::sync::{Arc, OnceLock};
+use std::fs::{File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -112,16 +120,148 @@ impl LogBridge {
     }
 }
 
+/// Where the log file lives inside the data directory (R89: not a setting).
+const LOG_DIR: &str = "logs";
+const LOG_FILE: &str = "app.log";
+/// Rotate once the live file would grow past this; `KEEP` rolled files stay.
+const MAX_BYTES: u64 = 1 << 20;
+const KEEP: usize = 3;
+
+/// `<data_dir>/logs/app.log` plus its rotations, as a `tracing` sink.
+///
+/// One record is buffered and written on drop, so a rotation can never split a
+/// line (item 1). Every filesystem error is swallowed (R88): if the log cannot be
+/// written, the app keeps running on stderr alone.
+#[derive(Clone)]
+struct FileWriter {
+    state: Arc<Mutex<RolledFile>>,
+}
+
+impl FileWriter {
+    fn new(live: PathBuf, max_bytes: u64, keep: usize) -> Self {
+        let mut file = RolledFile { live, max_bytes, keep, handle: None, written: 0 };
+        file.handle = file.open();
+        Self { state: Arc::new(Mutex::new(file)) }
+    }
+}
+
+impl<'a> MakeWriter<'a> for FileWriter {
+    type Writer = LineWriter<'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        LineWriter { sink: self, line: Vec::new() }
+    }
+}
+
+/// Buffers one formatted record; the actual write happens on drop.
+struct LineWriter<'a> {
+    sink: &'a FileWriter,
+    line: Vec<u8>,
+}
+
+impl Write for LineWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.line.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for LineWriter<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.sink.state.lock() {
+            state.append(&self.line);
+        }
+    }
+}
+
+/// The live file plus the size bookkeeping rotation needs.
+struct RolledFile {
+    live: PathBuf,
+    max_bytes: u64,
+    keep: usize,
+    handle: Option<File>,
+    written: u64,
+}
+
+impl RolledFile {
+    /// Append one whole line, rolling first if it would not fit. Never fails out.
+    fn append(&mut self, line: &[u8]) {
+        if line.is_empty() {
+            return;
+        }
+        if self.handle.is_none() {
+            // Retry: the directory may have become writable since the last try.
+            let reopened = self.open();
+            self.handle = reopened;
+        }
+        if self.handle.is_none() {
+            return;
+        }
+        // `written > 0` keeps one oversized line from rolling the file forever.
+        if self.written > 0 && self.written + line.len() as u64 > self.max_bytes {
+            self.roll();
+        }
+        if let Some(handle) = self.handle.as_mut() {
+            if handle.write_all(line).is_ok() {
+                self.written += line.len() as u64;
+            } else {
+                self.handle = None;
+            }
+        }
+    }
+
+    /// `app.log` → `app.log.1`, `.1` → `.2`, …; the one at `keep` is dropped.
+    fn roll(&mut self) {
+        if let Some(mut handle) = self.handle.take() {
+            let _ = handle.flush();
+        }
+        let _ = std::fs::remove_file(roll_path(&self.live, self.keep));
+        for index in (1..self.keep).rev() {
+            let from = roll_path(&self.live, index);
+            if from.exists() {
+                let _ = std::fs::rename(&from, roll_path(&self.live, index + 1));
+            }
+        }
+        let _ = std::fs::rename(&self.live, roll_path(&self.live, 1));
+        self.written = 0;
+        let reopened = self.open();
+        self.handle = reopened;
+    }
+
+    /// Open in append mode, creating the directory on the way; `None` on any
+    /// failure, which turns this sink into a no-op (R88).
+    fn open(&self) -> Option<File> {
+        if let Some(dir) = self.live.parent() {
+            std::fs::create_dir_all(dir).ok()?;
+        }
+        OpenOptions::new().create(true).append(true).open(&self.live).ok()
+    }
+}
+
+/// `app.log` + index → `app.log.1`; via `OsString` so non-UTF-8 paths survive.
+fn roll_path(live: &Path, index: usize) -> PathBuf {
+    let mut name = live.as_os_str().to_os_string();
+    name.push(format!(".{index}"));
+    PathBuf::from(name)
+}
+
 /// Installs the process subscriber: `RUST_LOG` (default `info`) to stderr as
-/// before, plus the bus layer. Returns the handle `main` attaches the App's bus
-/// to.
+/// before, plus the bus layer and the rotating file under the data directory.
+/// Returns the handle `main` attaches the App's bus to.
 pub fn install() -> LogBridge {
     let bridge = LogBridge::default();
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let live = crate::glue::data_dir().join(LOG_DIR).join(LOG_FILE);
+    let file = FileWriter::new(live, MAX_BYTES, KEEP);
     tracing_subscriber::registry()
         .with(filter)
         .with(BusLogs { bus: Arc::clone(&bridge.bus) })
         .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_ansi(false).with_writer(file))
         .init();
     bridge
 }
@@ -210,5 +350,78 @@ mod tests {
         let batches = sink.0.lock().expect("sink lock").join("");
         assert!(batches.contains(r#""event":"log.line""#), "got {batches}");
         assert!(batches.contains("router ready"), "got {batches}");
+    }
+
+    /// T083a: a scratch directory of its own, so rotation tests cannot collide.
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("rs-kafka-ui-log-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    /// Feed the writer the way the subscriber does: one buffered record per call.
+    fn write_line(writer: &FileWriter, line: &str) {
+        let mut guard = writer.make_writer();
+        guard.write_all(line.as_bytes()).expect("buffered write");
+        drop(guard);
+    }
+
+    fn read(path: &Path) -> String {
+        std::fs::read_to_string(path).unwrap_or_default()
+    }
+
+    #[test]
+    fn every_line_lands_in_the_live_file() {
+        let dir = scratch("live");
+        let writer = FileWriter::new(dir.join(LOG_FILE), 1 << 20, KEEP);
+
+        write_line(&writer, "first\n");
+        write_line(&writer, "second\n");
+
+        assert_eq!(read(&dir.join(LOG_FILE)), "first\nsecond\n");
+        assert!(!dir.join("app.log.1").exists(), "a small file must not roll");
+    }
+
+    #[test]
+    fn the_file_rolls_and_keeps_only_the_newest_copies() {
+        let dir = scratch("roll");
+        // Room for one 20-byte line per file, two rolled files kept.
+        let writer = FileWriter::new(dir.join(LOG_FILE), 32, 2);
+
+        for index in 0..8 {
+            write_line(&writer, &format!("line-{index}-padpadpadpad\n"));
+        }
+
+        assert!(dir.join("app.log.1").exists(), "the live file must have rolled");
+        assert!(dir.join("app.log.2").exists(), "the older copy shifts to .2");
+        assert!(!dir.join("app.log.3").exists(), "keep=2 drops the oldest");
+        let live = read(&dir.join(LOG_FILE));
+        assert!(live.contains("line-7"), "the newest line is live: {live}");
+        assert!(!live.contains("line-1"), "an old line is not live: {live}");
+    }
+
+    #[test]
+    fn an_unusable_directory_degrades_quietly() {
+        let dir = scratch("blocked");
+        // A regular file where the log's parent directory would have to be.
+        let blocker = dir.join("blocker");
+        std::fs::write(&blocker, b"not a directory").expect("blocker");
+
+        write_line(&FileWriter::new(blocker.join(LOG_FILE), 32, KEEP), "nowhere to go\n");
+
+        assert!(!blocker.join(LOG_FILE).exists(), "no file, no panic, no error");
+    }
+
+    #[test]
+    fn one_oversized_line_is_written_before_rolling() {
+        let dir = scratch("oversized");
+        let writer = FileWriter::new(dir.join(LOG_FILE), 8, KEEP);
+
+        write_line(&writer, &format!("{}\n", "x".repeat(64)));
+        write_line(&writer, "short\n");
+
+        assert!(read(&dir.join(LOG_FILE)).contains("short"), "the short line rolled first");
+        assert!(read(&dir.join("app.log.1")).contains("xxxx"), "the long line is not lost");
     }
 }

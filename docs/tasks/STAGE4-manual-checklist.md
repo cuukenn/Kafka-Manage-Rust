@@ -42,6 +42,7 @@
 22. **T080**：启动应用 → 日志面板出现来源为 `rust` 的行（例如 `glue event pump online`），级别徽标按 tracing 级别着色（info/warn/error）；`Assembly` 构建期的两行按 R73 只进 stderr；清空后新日志继续追加。
 23. **T081b**：故意触发一次失败（未连接时刷新 topic 列表 / 输入不存在的 topic），错误文案**第二行**出现 T081 的行动建议（如 `Check bootstrap servers and network reachability.`）；`InvalidConfig` 与 `Cancelled` 两类按 R76 只有一行；`rpc.ts` 记进日志面板的 `rpc failed` 行同样带建议。
 24. **T082c**：触发一次慢请求（连一个不可达地址的集群，或对超大 topic 列表点刷新），顶栏 spinner 旁出现琥珀色「取消」按钮；按下后 spinner 归零、弹出「已取消 N 个在途请求」、视图的错误条显示 `cancelled`（不是 `network`）；日志面板里对应行是 `rpc failed (cancelled)`。后端兜底另验：把某次请求拖过 30 s（R81）应回 `timeout` 且 UI 不再卡住。
+25. **T083a**：跑起来后 `<data_dir>/logs/` 下出现 `app.log`（macOS 为 `~/Library/Application Support/rs-kafka-ui-client/logs/app.log`），内容与日志面板里 `rust` 来源的行一致（只是带 target/字段的完整形态）；把文件撑过 1 MiB 后应出现 `app.log.1`，且 `.1`/`.2`/`.3` 最多三份滚动文件、`app.log.4` 永不出现；改坏目录权限（或把 `logs` 换成同名普通文件）后启动应**只**降级到 stderr，不弹错、不崩。
 
 ## 记录方式
 
