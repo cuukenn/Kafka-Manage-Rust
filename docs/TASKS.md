@@ -88,6 +88,7 @@
 - ✅ **T108（阶段 10 · 文档补遗，2026-10-17）**：README 从「同时当两本书」收敛为**只服务第一次看仓库的人**（167→72 行：功能 7 条 + 快速开始 4 段可照抄命令 + 架构一图 + 文档指针 + License）；维护者正文（按平台前置、五条门禁与三条注意事项、技术栈版本表、Workspace 职责、IPC 协议、openssl@4 根因与两种解法、broker 端口、数据目录、卡片与预算约定）整体移入新增的 `docs/development.md`（117 行）；README 只留一行指针，漂移面收敛到链接。围栏成对、5 个链接目标均在；全部 `*.md`、0 行源码（R121–R123）。
 - ✅ **T109（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 从未跑过（`git tag` 为空），静态校验却查出四处硬伤——① Linux 两个 job **没有系统依赖步骤**（ci.yml 有、release.yml 漏了）⇒ `cargo build` 必失败；② `macos-13` **2025-12-04 已退役**、③ `macos-14` **2026-11-02 退役**（10 月已有 brownout）⇒ 改 `macos-15-intel` / `macos-15`，ci.yml 同一 label 一并换以保住 R98 的对齐；④ `tar -a -cf *.zip` 在 windows runner 上走 Git 的 GNU tar，而后缀表里没有 `.zip` ⇒ 产出**扩展名撒谎的未压缩 tar**，改用 `Compress-Archive`（pwsh）。另补 `--locked` 与 `generate_release_notes: true`。`ruby -ryaml` 双文件解析通过；仍**未在托管 runner 上执行过**（R124–R126）。
 - ✅ **T110（阶段 11 · 缺陷修复，2026-10-17）**：发现 `release.yml` 一直只跑 `cargo build --release -p main-bin`，**漏了 `--features real`** —— Mock 是默认驱动，于是发布产物是 Mock-only 的，用户下载后接真实集群只会拿到 `real Kafka driver is not compiled in; rebuild with --features real`。已加 `--features real`，并补齐这条命令新引入的前置：Linux 由已有 apt 清单覆盖（`libssl-dev`+`cmake`）、macOS 显式钉 keg-only 的 `openssl@3` 并导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH`（R128）、Windows 定位带 `libcrypto.lib` 的安装根目录且找不到就 `throw`（R129）；real 驱动动态链接 OpenSSL，故 Windows 产物把 `libcrypto-3-x64.dll`/`libssl-3-x64.dll` 与 exe 一起打包。取证：本机跑同一条命令 exit 0、`strings` 查不到占位文案，而反向对照（不带 features）能查到 ⇒ 判据有效。仍未在任何 runner 上执行过（R127–R129）。
+- ✅ **T111（阶段 11 · 缺陷修复，2026-10-17）**：v0.1.1 只有 1 个产物、4 个 job 全红的根因查清了——T110 的 `--features real` 让 librdkafka 的 C 源码参与构建，而 `rdkafka_conf.c:60` 的 `#include <curl/curl.h>` 由 **`WITH_OAUTHBEARER_OIDC`** 守卫（不是 `WITH_CURL`），`rdkafka-sys` 又无条件 `WITH_SASL_OAUTHBEARER=1`，于是三个平台都需要 curl 头。Docker 里照抄 workflow 的 apt 清单复现出同样的报错与 101；改为给 rdkafka 打开 `curl` feature（`curl-sys` 提供头/库）后，同一容器**不装任何 curl 开发包**即 `CARGO_EXIT=0`；本机 `--features real` 与随后 `--locked` 构建都绿；Windows 的 OpenSSL 探测也按镜像真实布局改正（根 `C:\Program Files\OpenSSL`，在 `lib\` 下递归找 `libcrypto.lib`），DLL 改 glob 取名。真实验收待下一次打 tag（R130–R132）。
 
 ---
 
@@ -268,6 +269,7 @@
 | T106 | 切 tab 不再中断消费订阅 | 无 | 手动（npm run build + 切 tab 观察订阅仍在） | ✅（`Shell.vue` +7/−1 把 `ConsumeView` 移出 `v-if` 链、改由 `<KeepAlive>` 包裹；`ConsumeView.vue` +9/−2 增加 `onActivated` 刷新主题列表、订正 `onBeforeUnmount` 注释；R115–R117） |
 | T109 | 修正 release workflow：Linux 依赖 / 退役 runner label / Windows 真 zip | T092 | 手动（YAML 解析 + 外部事实核对） | ✅（release.yml 补齐四处可执行性缺陷，ci.yml 的 macos-14 同步；0 行源码；R124–R126） |
 | T110 | 发布产物内置 real 驱动（release 用 `--features real`） | T109 | 手动（产物字符串取证 + YAML 解析） | ✅（release 构建加 `--features real`，macOS/Windows 各自备 OpenSSL，Windows 随包发两个 DLL；0 行源码；R127–R129） |
+| T111 | 修 release 的 4/5 平台失败：librdkafka 需要 curl 头 | T110 | 手动（Docker 复现 + 本机 --locked 构建） | ✅（根 `Cargo.toml` 的 rdkafka 加 `curl` feature，由 `curl-sys` 提供头/库；`Cargo.lock` +16 行新增 `curl-sys`；Linux 容器复现 exit 101 → 修后 `CARGO_EXIT=0`；Windows OpenSSL 探测按镜像真实布局重写；R130–R132） |
 
 ---
 

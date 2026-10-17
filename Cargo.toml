@@ -53,7 +53,7 @@ tempfile = "3"
 criterion = { version = "0.7", features = ["async_tokio"] }
 
 # real kafka driver (feature-gated: needs cmake + C toolchain)
-rdkafka = { version = "0.39", features = ["cmake-build", "ssl"] }
+rdkafka = { version = "0.39", features = ["cmake-build", "ssl", "curl"] }
 
 # internal crates
 kafka-core = { path = "crates/kafka-core" }
