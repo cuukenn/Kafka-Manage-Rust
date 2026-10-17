@@ -56,6 +56,8 @@
 
 33. **T112**：推送后到 GitHub Actions 看 `ci` workflow（push/PR 即触发，**不必打 tag**）——`real feature check` job 应**真正编译并链接** `main-bin --features real`（不再秒过），日志里能看到 `real-deps` 复合作按 runner 平台走不同分支（Linux 装 apt 全清单 / macOS 装 keg-only `openssl@3` / Windows 在 `C:\Program Files\OpenSSL` 下递归找到 `libcrypto.lib`）。本机无法执行 Actions，此项须在推送后确认。
 
+34. **T113**：下一次打 tag 后到 Releases 页确认 —— release **只被创建一次**（不会出现 `already_exists` 导致的产物缺失），正文里 `**Full Changelog**` **只出现一次**（v0.1.0 曾重复 5 次）；五个平台的产物仍齐全；Actions 里能看到 `build` 五个 job 各自上传 artifact、随后 `release` job 汇总发布。本机无法执行 Actions，须在推送后确认。
+
 ## 记录方式
 
 用户按编号反馈（如「1-12 过，13 行数翻倍」）；失败项我登记缺陷卡并走修复循环。

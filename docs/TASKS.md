@@ -90,6 +90,7 @@
 - ✅ **T110（阶段 11 · 缺陷修复，2026-10-17）**：发现 `release.yml` 一直只跑 `cargo build --release -p main-bin`，**漏了 `--features real`** —— Mock 是默认驱动，于是发布产物是 Mock-only 的，用户下载后接真实集群只会拿到 `real Kafka driver is not compiled in; rebuild with --features real`。已加 `--features real`，并补齐这条命令新引入的前置：Linux 由已有 apt 清单覆盖（`libssl-dev`+`cmake`）、macOS 显式钉 keg-only 的 `openssl@3` 并导出 `OPENSSL_DIR`/`PKG_CONFIG_PATH`（R128）、Windows 定位带 `libcrypto.lib` 的安装根目录且找不到就 `throw`（R129）；real 驱动动态链接 OpenSSL，故 Windows 产物把 `libcrypto-3-x64.dll`/`libssl-3-x64.dll` 与 exe 一起打包。取证：本机跑同一条命令 exit 0、`strings` 查不到占位文案，而反向对照（不带 features）能查到 ⇒ 判据有效。仍未在任何 runner 上执行过（R127–R129）。
 - ✅ **T111（阶段 11 · 缺陷修复，2026-10-17）**：v0.1.1 只有 1 个产物、4 个 job 全红的根因查清了——T110 的 `--features real` 让 librdkafka 的 C 源码参与构建，而 `rdkafka_conf.c:60` 的 `#include <curl/curl.h>` 由 **`WITH_OAUTHBEARER_OIDC`** 守卫（不是 `WITH_CURL`），`rdkafka-sys` 又无条件 `WITH_SASL_OAUTHBEARER=1`，于是三个平台都需要 curl 头。Docker 里照抄 workflow 的 apt 清单复现出同样的报错与 101；改为给 rdkafka 打开 `curl` feature（`curl-sys` 提供头/库）后，同一容器**不装任何 curl 开发包**即 `CARGO_EXIT=0`；本机 `--features real` 与随后 `--locked` 构建都绿；Windows 的 OpenSSL 探测也按镜像真实布局改正（根 `C:\Program Files\OpenSSL`，在 `lib\` 下递归找 `libcrypto.lib`），DLL 改 glob 取名。真实验收待下一次打 tag（R130–R132）。
 - ✅ **T112（阶段 11 · 缺陷修复，2026-10-17）**：T110/T111 那类问题**都只在链接期暴露**，而 `ci.yml` 的 `real-check` 一直只跑 `cargo check -p kafka-driver --features real`（不链接）⇒ CI 拦不住。本卡把它升为 **`cargo build -p main-bin --features real --locked`**，并把两个 workflow 里重复的三平台依赖准备抽成复合作 `.github/actions/real-deps/action.yml`（Linux apt 全清单 / macOS keg-only `openssl@3` / Windows 按镜像真实布局找 `libcrypto.lib`），一处维护且保住 R98 的对齐（R133–R135）。
+- ✅ **T113（阶段 11 · 缺陷修复，2026-10-17）**：`release.yml` 的五个平台 job 曾是**五个写者**——各自调一次 `action-gh-release`，于是撞 `already_exists`、且 `generate_release_notes` 被各追加一次（v0.1.0 正文里 `**Full Changelog**` 原样出现 **5 次**，实证）。本卡拆成两阶段：`build` 只构建并 `upload-artifact`（`contents: read`），新增 `release` job（`needs: build`、`contents: write`）下载全部 artifact 后**只发布一次**；产物命名与矩阵一字未改（R136–R138）。
 
 ---
 
@@ -272,6 +273,7 @@
 | T110 | 发布产物内置 real 驱动（release 用 `--features real`） | T109 | 手动（产物字符串取证 + YAML 解析） | ✅（release 构建加 `--features real`，macOS/Windows 各自备 OpenSSL，Windows 随包发两个 DLL；0 行源码；R127–R129） |
 | T111 | 修 release 的 4/5 平台失败：librdkafka 需要 curl 头 | T110 | 手动（Docker 复现 + 本机 --locked 构建） | ✅（根 `Cargo.toml` 的 rdkafka 加 `curl` feature，由 `curl-sys` 提供头/库；`Cargo.lock` +16 行新增 `curl-sys`；Linux 容器复现 exit 101 → 修后 `CARGO_EXIT=0`；Windows OpenSSL 探测按镜像真实布局重写；R130–R132） |
 | T112 | CI 也真实编译 real 驱动（共用 `real-deps` 复合作） | T110 | 手动（YAML 解析 + 与 release.yml 共用同一份） | ✅（新增 `.github/actions/real-deps/action.yml` 把三平台依赖准备抽成一处，`ci.yml` 与 `release.yml` 共用；`real-check` 由 `cargo check` 升为 **`cargo build -p main-bin --features real --locked`** ⇒ 链接期问题 CI 即可拦住；`release.yml` 步序仍 12 步；R133–R135） |
+| T113 | release 发布改成「先传 artifact、再单点发布」 | T112 | 手动（YAML 解析 + 结构核对） | ✅（`build` 五 job 不再各自发布，改为 `upload-artifact@v4`；新增 `needs: build` 的 `release` job 汇总之**一次** `action-gh-release`；顶部权限收紧为 `contents: read`；正文重复 5 次与 `already_exists` 竞态同时消掉；R136–R138） |
 
 ---
 

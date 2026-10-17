@@ -6,8 +6,9 @@ on:
     tags:
       - 'v*'
 
+# T113: build job 只需要读权限（它只上传 workflow artifact），写权限只给下面的 release job。
 permissions:
-  contents: write # 上传 release assets
+  contents: read
 
 jobs:
   build:
@@ -110,8 +111,37 @@ jobs:
           tar -czf "${NAME}.tar.gz" -C staging "$OUTBIN"
           echo "ASSET=${NAME}.tar.gz" >> "$GITHUB_ENV"
 
-      - name: 上传产物到 Release
+      # T113: 只把产物存成 workflow artifact。以前 5 个 matrix job 各自调 action-gh-release，
+      # 并发创建同一个 release 会撞 already_exists，正文也被各追加一次（v0.1.0 的 release body
+      # 里 "Full Changelog" 重复了 5 行，就是实证）。现在统一交给下面的 release job。
+      - name: 上传产物（workflow artifact）
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # T113: 收齐 5 个产物后**只创建一次** release——没有并发，正文只有一份。
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write # 创建 release 并上传 assets
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 列出待发布产物
+        run: ls -lh dist
+
+      - name: 创建 Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: dist/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
