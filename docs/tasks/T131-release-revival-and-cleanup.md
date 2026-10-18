@@ -78,4 +78,6 @@ id 不变、`created_at` 变成 tag 重建的时刻、旧 assets 全部回来。
 - 本机 dry-run 打真 API 认到 release 415989164 与 11 个 asset；假 token 的负路径也走通（不弄红 job）。
 - 顺带纠正 T128 的前提：GitHub 会复活同一 tag 的 Release（见卡内时间线）。
 - `.github/workflows/release.yml` 单文件改动 + 本卡，**0 行源码**。
-- 真正的判据在重打 tag 之后：恰好 5 个 asset + 清理步的 notice。
+- 重打 tag 后实测（`77504ab`）：Release Build run `39091136645` 六个 job 全绿，Release v0.1.5 上**恰好 5 个**
+  asset（原来那 11 个脏的没了）；Windows 档案名带 `windows`；macOS 两个 4648066 / 4515879 B（内含 `.app`）。
+  CI run `39091096753` 五 job 全绿，含新加的「workflow 自检」。
