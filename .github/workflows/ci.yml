@@ -21,6 +21,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # T130: 先验 .github/ 自己。GitHub 拒收一份 workflow 时不给任何错误文本 —— 只生成一个 0 个 job、
+  # 瞬间失败、名字显示成文件路径（而不是 name:）的 run。T128 的 `releases: write` 就是这样把发布
+  # 流水线弄停的（schema 对 permissions 是 additionalProperties:false，`releases` 不在列表里）。
+  # 所以把「这份文件合法吗」做成 CI 第一步：出错时至少有个能读的地方。
+  workflow-lint:
+    name: workflow 自检
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 校验 .github/ 里的 workflow
+        run: ./scripts/check-workflows.sh
+
   test:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

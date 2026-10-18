@@ -215,8 +215,11 @@ jobs:
     needs: build
     runs-on: ubuntu-22.04
     permissions:
-      contents: write # 创建 release 并上传 assets
-      releases: write # T128: 删掉该 Release 上的旧 assets
+      # T130: 这里只有 schema 列出的 scope 合法 —— `releases` 不存在（GitHub 的 workflow schema
+      # 对 permissions 是 additionalProperties:false）。T128 写了 `releases: write`，于是整份
+      # release.yml 被 GitHub 拒收：每次 push 生成一个 0 job、瞬间失败、名字显示成文件路径的 run，
+      # tag 触发的构建从 2279ce7 之后一次都没跑过。删该 Release 上的旧 asset 归 contents: write 管。
+      contents: write # 创建 release、上传 asset、删旧 asset
     steps:
       - name: 下载全部产物
         uses: actions/download-artifact@v4

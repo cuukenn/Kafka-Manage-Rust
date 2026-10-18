@@ -62,3 +62,9 @@ Release 不存在（首次发布，404）就跳过。`permissions` 补 `releases
 - `release` job：4 步（下载 → 列出 → 清空旧 asset → 创建 Release），`permissions` 加 `releases: write`。
 - 单文件 `.github/workflows/release.yml`，**0 行源码**。
 - 判据在重打 tag 之后：Release 恰好 5 个 asset。
+
+> **T130 修正**：本卡给 `release` job 加的 `releases: write` 不是合法 permission scope（GitHub 的
+> workflow schema 对 `permissions` 是 `additionalProperties:false`），它让整份 `release.yml` 被 GitHub
+> 拒收 —— 发布流水线从 `2279ce7` 之后一次都没跑过。权限改回 `contents: write`。
+> 另外「删 tag 不会删 Release」这条前提也不可靠：第二次删 tag 之后 `/releases/tags/v0.1.5` 直接 404。
+> 清空旧 asset 的做法本身保留。
