@@ -216,6 +216,7 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write # 创建 release 并上传 assets
+      releases: write # T128: 删掉该 Release 上的旧 assets
     steps:
       - name: 下载全部产物
         uses: actions/download-artifact@v4
@@ -225,6 +226,40 @@ jobs:
 
       - name: 列出待发布产物
         run: ls -lh dist
+
+      # T128: 删 tag 并不会删掉 Release —— 实测 v0.1.5：tag 删了、Release（id 415989164）和它的
+      # assets 都还在，重跑只是往上追加（于是攒出 10 个 asset）。用户「重打 tag 重试」这条流程要能
+      # 反复用，所以发布前先把该 Release 的旧 asset 清空。Release 不存在（首次发布）就跳过。
+      - name: 清空旧 asset（让同一个 tag 可重复发）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          tok = os.environ["GITHUB_TOKEN"]
+
+          def req(path, method="GET"):
+              r = urllib.request.Request(api + path, method=method, headers={
+                  "Authorization": "Bearer " + tok,
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28"})
+              return urllib.request.urlopen(r)
+
+          try:
+              rel = json.load(req("/repos/%s/releases/tags/%s" % (repo, tag)))
+          except urllib.error.HTTPError as e:
+              if e.code == 404:
+                  print("release 还不存在，无需清理")
+                  raise SystemExit(0)
+              raise
+          for a in rel.get("assets", []):
+              req("/repos/%s/releases/assets/%d" % (repo, a["id"]), "DELETE")
+              print("deleted:", a["name"])
+          print("cleared %d old asset(s) from release %d" % (len(rel.get("assets", [])), rel["id"]))
+          PY
 
       - name: 创建 Release
         uses: softprops/action-gh-release@v2
