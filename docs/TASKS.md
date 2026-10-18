@@ -109,6 +109,7 @@
 - ✅ **T130（阶段 11 · 缺陷修复，2026-10-18）**：查清「tag 触发的构建从 2279ce7 之后一次都没跑过」的原因 —— T128 给 release job 加的 `releases: write` 是非法 permission scope（GitHub 的 workflow schema 对 `permissions` 是 `additionalProperties:false`，列表里没有 `releases`）。GitHub 拒收一份 workflow 时不给任何错误文本，痕迹只有：`name` 退化成文件路径、`jobs` 为空、`created_at == updated_at`、连 tags-only 的 workflow 也会被 branch push 生成 0-job 失败 run。`ruby -ryaml` 解析得过，所以 T128 的门禁放过了它。改回 `contents: write`；新增 `scripts/check-workflows.sh`（permissions scope 白名单 + 同层重复 key）并作为 ci.yml 的第一个 job「workflow 自检」；本机用 `json.schemastore.org/github-workflow.json` 正反向校验过：坏文件 1 error、修好的 0 error。R172–R173。
 - ✅ **T131（阶段 11 · 缺陷修复，2026-10-18）**：Release Build 全绿但 v0.1.5 上攒了 **11 个 asset**，T128 的清理步没生效。从 asset 的 `created_at` 反推出真相：Release id 415989164 一直没变、`created_at` 变成 tag 重建那一刻 ⇒ GitHub 把同一 tag 的 Release **复活**了；21:34 那批只剩命名错的 `x64_x64` 活着，另外四个是被 `action-gh-release` 的同名覆盖换掉的。清理步当时 `GET /releases/tags/{tag}` 拿到 404 就静默跳过了。现在：by-tag 失败就用列表按 `tag_name` 找、**删整个 Release**、每一步结论写成 annotation。本机 dry-run 认到 11 个 asset，假 token 的负路径也不弄红 job。R174–R175。
 - ✅ **T132a（阶段 11 · 缺陷修复，2026-10-18）**：用户报告「macos产物执行以损坏、无法执行」，并明确「证书等不需要管」。本机复现定性：cargo/ld 在 arm64 上给可执行文件自动打了 ad-hoc 签名（`flags=0x20002(adhoc,linker-signed)`），但 `.app` bundle 自己从未被签 ⇒ `codesign --verify` 报 `code has no resources but signature indicates they must be present`，这正是「已损坏」的判据（与隔离属性无关）。修法：CI 里 `codesign --force --deep --sign -`（不需要证书）+ `codesign --verify --deep --strict` 当门禁；本机双向验证（负路径真实退出码 1）、tar 往返后仍 `valid on disk`。R176。
+- ✅ **T132b（阶段 11 · 文档，2026-10-18）**：把 T132a 的判据落到用户会看的两处。checklist 第 37 条现在先验签名（`valid on disk` + `satisfies its Designated Requirement`，且不该出现 `code has no resources but signature indicates they must be present`）、再双击、并写明首次可能要右键→打开或 `xattr -dr com.apple.quarantine`；`docs/development.md` 发布节补 ad-hoc 签名。2 个文件、0 行源码。
 
 ---
 
@@ -309,6 +310,7 @@
 | T130 | 发布流水线为什么停了：`releases: write` 让整份 release.yml 被 GitHub 拒收 | T113,T128 | 手动（GitHub 官方 workflow schema 本机校验，正/反向） | ✅（schema 的 permissions 没有 `releases` ⇒ 改回 `contents: write`；新增 `scripts/check-workflows.sh` + ci.yml 的「workflow 自检」job；R172–R173） |
 | T131 | 旧 asset 清不掉的真正原因：GitHub 复活同一 tag 的 Release | T113,T126,T128,T130 | 手动（本机抽脚本打真 API 做 dry-run + 负路径） | ✅（by-tag 失败 ⇒ by-list 兜底；改成删整个 Release；结论全走 annotation；R174–R175） |
 | T132a | macOS 的 `.app` 在 CI 里 ad-hoc 签名（治「已损坏，无法执行」） | T127 | 手动（本机复现诊断 + 真跑 staging/tar + 负路径退出码） | ✅（根因：可执行文件带 linker ad-hoc 签名、bundle 自己没签 ⇒ `code has no resources but signature indicates they must be present`；加 `codesign --force --deep --sign -` + verify 门禁；R176） |
+| T132b | 文档：macOS 首次打开那一步 + 签名自检判据 | T132a | 手动（文本核对） | ✅（checklist 第 37 条加 `codesign --verify` 判据与隔离属性说明；development.md 补 ad-hoc 签名；0 行源码） |
 | T115 | 发布版本同步：tag 与 `Cargo.toml` 不一致导致的 v0.1.3 失败 | T114 | 手动（`scripts/release.sh` 干跑 + 护栏核对） | ✅（新增 `scripts/release.sh`：格式/tag 重名/脏树/同版本四道拒绝，bump 后跑 `cargo update --workspace` 刷 `Cargo.lock`（release 用 `--locked`，不同步会直接失败），再 commit+tag+push；并把 `[workspace.package] version` 由 0.1.0 提为 **0.1.3**（`Cargo.lock` 五个成员同步）；v0.1.3 失败的根因即 T114 护栏按设计开火；R141–R143） |
 
 ---
