@@ -62,7 +62,7 @@
 
 36. **T115**：发布流程改为走 `scripts/release.sh <version>`——先 `--dry-run` 看清会改什么，真跑后本地应多出 `chore(release): vX.Y.Z` 提交与同名 annotated tag，且推送后 `version-guard` job 通过；同时确认 `Cargo.lock` 里五个成员版本与 tag 一致（否则 `--locked` 构建会失败）。另：`v0.1.3` 的 tag 已被重新指向带 0.1.3 版本的提交，Actions 里应有一次新的运行。
 
-37. **T119 + T126 + T127**：下载 `rs-kafka-ui-client_<ver>.macos_arm64.tar.gz`，解压出来应是 `rs-kafka-ui-client_<ver>.app` —— **双击就能起**（这台机器不装 Homebrew `openssl@3` 也要能起；未签名首次被 Gatekeeper 拦时右键→打开）；`otool -L` 里不应再出现 `openssl` / `libssl` / `libcrypto`。Windows 的 zip 里应只有 `rs-kafka-ui-client_<ver>.exe`，且档案名的平台段是 `windows`（不是 `x64`）。Linux 解压出来是带执行位的裸文件 `rs-kafka-ui-client_<ver>`。
+37. **T119 + T126 + T127 + T132a**：下载 `rs-kafka-ui-client_<ver>.macos_arm64.tar.gz`，解压出来应是 `rs-kafka-ui-client_<ver>.app`。**先验签名**：`codesign --verify --deep --strict --verbose=2 <app>` 应输出 `valid on disk` + `satisfies its Designated Requirement`（ad-hoc 签名，不需要证书）——**不该再出现 `code has no resources but signature indicates they must be present`**（那是「已损坏」的判据）。然后**双击打开**：首次可能仍要右键→打开，或先 `xattr -dr com.apple.quarantine <app>` 清掉下载隔离属性。这台机器不装 Homebrew `openssl@3` 也必须能起；`otool -L` 里不应再出现 `openssl` / `libssl` / `libcrypto`。Windows 的 zip 里应只有 `rs-kafka-ui-client_<ver>.exe`，且档案名的平台段是 `windows`（不是 `x64`）。Linux 解压出来是带执行位的裸文件 `rs-kafka-ui-client_<ver>`。
 
 ## 记录方式
 

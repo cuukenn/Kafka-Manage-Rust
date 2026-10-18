@@ -110,7 +110,7 @@ git push origin v0.1.5
 
 `release.yml` 在 `v*` 上触发 → 五个平台各自构建（档案名 `名称_版本.平台_架构.格式`，例
 `rs-kafka-ui-client_0.1.5.macos_arm64.tar.gz`；解压出来 macOS 是 `rs-kafka-ui-client_0.1.5.app`
-——双击即运行，未签名时首次仍要右键→打开；Windows 是 `rs-kafka-ui-client_0.1.5.exe`；
+——**ad-hoc 签名**（`codesign --force --deep --sign -`，不需要证书；T132a），双击即运行，首次可能仍要右键→打开或先 `xattr -dr com.apple.quarantine`；Windows 是 `rs-kafka-ui-client_0.1.5.exe`；
 Linux 是带执行位的裸文件 `rs-kafka-ui-client_0.1.5`）→ 各自上传一个 workflow artifact →
 最后一个 `release` job 汇总，**一次性**创建 Release 并挂上全部 5 个产物。
 
