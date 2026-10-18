@@ -68,3 +68,7 @@ Release 不存在（首次发布，404）就跳过。`permissions` 补 `releases
 > 拒收 —— 发布流水线从 `2279ce7` 之后一次都没跑过。权限改回 `contents: write`。
 > 另外「删 tag 不会删 Release」这条前提也不可靠：第二次删 tag 之后 `/releases/tags/v0.1.5` 直接 404。
 > 清空旧 asset 的做法本身保留。
+
+## T131 修正（2026-10-18）
+
+本卡的前提「删 tag 不会删 Release」只对了一半：GitHub 会把同一 tag 的 Release **复活**（id 不变、`created_at` 变成 tag 重建的时刻、旧 assets 全部回来），而本卡用的 `GET /releases/tags/{tag}` 在删/建之间会短暂 404 —— 于是清理步静默跳过，v0.1.5 攒到 11 个 asset。清理步已改成「by-list 兜底 + 删整个 Release + 全程 annotation」，见 `T131-release-revival-and-cleanup.md`（R174–R175）。

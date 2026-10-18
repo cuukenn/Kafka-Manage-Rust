@@ -230,10 +230,13 @@ jobs:
       - name: 列出待发布产物
         run: ls -lh dist
 
-      # T128: 删 tag 并不会删掉 Release —— 实测 v0.1.5：tag 删了、Release（id 415989164）和它的
-      # assets 都还在，重跑只是往上追加（于是攒出 10 个 asset）。用户「重打 tag 重试」这条流程要能
-      # 反复用，所以发布前先把该 Release 的旧 asset 清空。Release 不存在（首次发布）就跳过。
-      - name: 清空旧 asset（让同一个 tag 可重复发）
+      # T128: 删 tag 并不会可靠地删掉 Release —— 实测 v0.1.5：tag 删了又重建之后，Release
+      # （id 415989164）和它的旧 assets 都还在，重跑只是往上追加（攒到 11 个）。
+      # T131: 上一版这里按 asset 逐个删，实测**没有生效**（见卡里的时间线），而且
+      # `GET /releases/tags/{tag}` 在「删 tag 又重建」之后会短暂 404 —— Release 本体却还在。
+      # 所以：改用列表找那个 Release、整个删掉（一次调用，连脏 asset 一起没）、
+      # 并且把每一步的结论写成 annotation（T120：那是唯一无凭据也看得见的通道）。
+      - name: 清空旧 Release（让同一个 tag 可重复发）
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -251,17 +254,35 @@ jobs:
                   "X-GitHub-Api-Version": "2022-11-28"})
               return urllib.request.urlopen(r)
 
+          def note(level, msg):
+              print("::%s::%s" % (level, msg.replace("%", "%25").replace("\n", "%0A")))
+
+          rel, src = None, "by-tag"
           try:
               rel = json.load(req("/repos/%s/releases/tags/%s" % (repo, tag)))
           except urllib.error.HTTPError as e:
-              if e.code == 404:
-                  print("release 还不存在，无需清理")
-                  raise SystemExit(0)
-              raise
-          for a in rel.get("assets", []):
-              req("/repos/%s/releases/assets/%d" % (repo, a["id"]), "DELETE")
-              print("deleted:", a["name"])
-          print("cleared %d old asset(s) from release %d" % (len(rel.get("assets", [])), rel["id"]))
+              note("notice", "lookup by tag failed: HTTP %d" % e.code)
+              src = "by-list"
+              try:
+                  for r in json.load(req("/repos/%s/releases?per_page=100" % repo)):
+                      if r.get("tag_name") == tag:
+                          rel = r
+                          break
+              except urllib.error.HTTPError as e2:
+                  note("error", "list releases failed: HTTP %d" % e2.code)
+          if rel is None:
+              note("notice", "no release for %s yet - nothing to clean" % tag)
+              raise SystemExit(0)
+
+          names = [a["name"] for a in rel.get("assets", [])]
+          note("notice", "found release %d (%s) with %d asset(s): %s"
+               % (rel["id"], src, len(names), ", ".join(names)))
+          try:
+              req("/repos/%s/releases/%d" % (repo, rel["id"]), "DELETE")
+              note("notice", "deleted release %d and its %d asset(s)" % (rel["id"], len(names)))
+          except urllib.error.HTTPError as e:
+              note("error", "delete release %d failed: HTTP %d %s"
+                   % (rel["id"], e.code, e.read().decode("utf-8", "replace")[:300]))
           PY
 
       - name: 创建 Release
