@@ -68,7 +68,10 @@ jobs:
           npm run build
 
       # T120: 匿名身份读不到 job 日志（logs 端点 404），但 annotations 读得到。
-      # ubuntu-22.04 的「测试」红了一阵，一直拿不到 `failures:` 那几行 —— 这条把它打到 annotation 上。
+      # T129: 上一版只捞得到 `test ... FAILED` 与 `failures:` 两类行，真正的 assertion diff 一直拿不到
+      # —— libtest 把失败详情放在 `failures:` 之后，而 CARGO_TERM_COLOR=always 的 ANSI 码让 `---- `
+      # 那类行匹配不上 ^ 锚点；一次 run 又只留下 10 条 annotation。
+      # 现在：去色 → 从第一个 `failures:` 取到末尾 → 压成**一条**多行 annotation（换行用 %0A）。
       - name: 测试
         shell: bash
         run: |
@@ -76,10 +79,11 @@ jobs:
           cargo test --workspace --locked 2>&1 | tee test.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            grep -nE "^(failures:|test result:|error|---- )|FAILED$" test.log | tail -n 30 | while IFS= read -r line; do
-              line="${line//%/25}"; line="${line//\"/%22}"
-              printf '::error::%s\n' "$line"
-            done
+            sed -e 's/\x1b\[[0-9;]*m//g' test.log > test.plain.log
+            block=$(awk '/^failures:/{f=1} f' test.plain.log | head -n 35 | cut -c1-200)
+            block="${block//%/%25}"; block="${block//:/%3A}"; block="${block//=/%3D}"
+            block="${block//$'\n'/%0A}"
+            printf '::error::cargo test failed: %s\n' "$block"
           fi
           exit "$status"
 
