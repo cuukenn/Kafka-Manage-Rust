@@ -52,3 +52,6 @@ rs-kafka-ui-client-0.1.5-aarch64-apple-darwin.tar.gz         4 647 399
 - 用户要的发布流程现在字面成立：`git tag -a v0.1.6 && git push origin v0.1.6` 就出产物。
 - Windows 那条链（T120→T124）逐层闭环，每层都由上一轮的 annotation 证明生效。
 - 遗留：`ci.yml` 的 ubuntu 测试红、macOS 未签名、产物可运行性待人工确认（清单第 37 条）。
+  → **全部已闭环，定稿验收见 `docs/tasks/T133-release-v015-final-acceptance.md`**：
+  ubuntu 测试 = T129（settle 换成有界静默窗口）、macOS = T132a（ad-hoc 签名；公证有意不做）、
+  可运行性 = 用户 2026-10-18 实测通过「产物正常、验证已通过」。
