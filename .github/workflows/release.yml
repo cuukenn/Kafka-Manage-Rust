@@ -163,6 +163,11 @@ jobs:
           </dict>
           </plist>
           PLIST
+            # T132: ad-hoc 签名（identity 用 -，不需要任何证书）。不签的话 bundle 处于
+            # 「可执行文件带 linker 签名、bundle 自己没签」的坏状态 ⇒ macOS 弹「已损坏，无法打开」。
+            codesign --force --deep --sign - "staging/$BUNDLE"
+            # T132: 签完立刻自检，不通过就让这一步红 —— 而不是让用户下到一个打不开的包。
+            codesign --verify --deep --strict --verbose=2 "staging/$BUNDLE"
           else
             cp "target/${TARGET}/release/${BIN}" "staging/${OUTBIN}"
           fi
