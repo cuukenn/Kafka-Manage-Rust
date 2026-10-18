@@ -101,6 +101,12 @@ T120 那版 annotation 提取**永远拿不到 assertion diff**，本机复现�
   错的是它假设 100 次让出足以让另一个线程池跑完。
 - **R170**：失败诊断要「一次 run 一条多行 annotation」，而不是一行一条。一次 run 只留 10 条
   annotation，一行一条必然把 assertion diff 挤掉。
+- **R171**：**跑门禁之前，先确认被测的就是改动后的那份代码。** 本卡第一次「全绿」是假的：
+  为了做对照实验，我用 `cp` + `git checkout --` 来回换 settle 版本，其中一次 `cp` 把**旧版本**
+  存成了「修复版」备份，之后所有恢复都在还原旧版本 —— 于是 workspace 测试、clippy、负载实验
+  全绿的是**没修的代码**，而且第一次 T129 提交里根本没有 `reconnect.rs`。
+  教训：对照实验用 `git stash` 或独立副本目录，别在同一个路径上换版本；
+  报绿之前 `grep` 一眼改动是否还在（`grep QUIET` 一秒就能发现）。
 
 ## 验收
 
@@ -112,8 +118,13 @@ T120 那版 annotation 提取**永远拿不到 assertion diff**，本机复现�
 
 ## 结果（完成后填写，≤5 行）
 
-- `settle()`：`QUIET=250ms` / `CAP=5s` 的真实静默窗口，`Instant` + `std::thread::sleep(5ms)` + 每轮 16 次 yield。
-- 本机门禁：workspace 测试 30 个二进制全 `ok`、clippy 干净、负载下 reconnect 12/12 绿。
-- `ci.yml`「测试」步：去 ANSI → 取第一个 `failures:` 到末尾 → 一条多行 annotation（本机实测 1526 字符 / 33 行）。
-- 源码预算：`reconnect.rs` 约 +25 行（测试代码），`ci.yml` 属 `.github/` 不计 ⇒ 合计 <250 行、2 个源文件。
-- CI 复核待跑：ubuntu 连续绿才算闭环。
+- `settle()`：`QUIET=250ms` / `CAP=5s` 的真实静默窗口（`Instant` + `std::thread::sleep(5ms)` + 每轮 16 次 yield）。
+  代价实测：该测试文件 0.02s → **1.26s**。
+- 门禁（在改动确实存在于工作区的前提下重跑过一遍）：`cargo test --workspace --locked` 失败 0 行、
+  `cargo clippy --workspace --all-targets -- -D warnings` 退出 0、2×核数负载下 reconnect **20/20 绿**、
+  30 个测试二进制并发 ×3 轮 **0/90 失败**。
+- `ci.yml`「测试」步：去 ANSI → 从第一个 `failures:` 取到末尾 → 一条多行 annotation
+  （本机用真实 colored 失败日志实测：1 条 1526 字符、解码回 33 行、含 3 处 `panicked at` 与 `left/right`）。
+- 源码预算：`reconnect.rs` +27/−6 行（测试代码）、`ci.yml` 属 `.github/` 不计 ⇒ 2 个源文件、<250 行。
+- 踩坑见 **R171**：第一次提交 `3450c4b` 里其实没有 `reconnect.rs`（对照实验的还原把旧版存成了备份），
+  补在后续提交。CI 复核待跑：ubuntu 连续绿才算闭环。

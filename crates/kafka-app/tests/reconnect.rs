@@ -2,7 +2,7 @@
 //! Everything runs against the mock driver; virtual time (`start_paused` + `advance`)
 //! pins the backoff table without any real waiting.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kafka_app::bus::{AppEvent, BusReceiver, EventBus};
 use kafka_app::services::clusters::{ClusterService, reconnect_backoff};
@@ -40,13 +40,34 @@ fn connection_states(events: &[AppEvent]) -> Vec<ConnectionState> {
         .collect()
 }
 
-/// Let spawned tasks (the supervisor, store blocking jobs) make progress under
-/// paused time, then return everything the bus published meanwhile.
+/// Let the supervisor — and the store jobs it runs through `spawn_blocking` — make
+/// progress, then return everything the bus published meanwhile.
+///
+/// A fixed `yield_now` count is a race, not a wait. Every teardown/connect step reaches
+/// SQLite via `spawn_blocking` (`services/mod.rs`), i.e. real blocking-pool threads that
+/// yielding cannot wait for, and under paused time `tokio::time::sleep` never elapses.
+/// The old 100 yields lost that race on a loaded runner: the bus stopped at
+/// `[Degraded]` because the supervisor had not yet returned from its first store call.
+/// So this polls with a bounded *real* quiet window — quiet ends the wait, the cap keeps
+/// a genuinely broken build from hanging. Staying runnable also keeps tokio from
+/// auto-advancing virtual time, which the backoff assertions below depend on.
 async fn settle(rx: &mut BusReceiver) -> Vec<AppEvent> {
-    for _ in 0..100 {
-        tokio::task::yield_now().await;
+    const QUIET: Duration = Duration::from_millis(250);
+    const CAP: Duration = Duration::from_secs(5);
+    let start = Instant::now();
+    let mut last = start;
+    let mut out = Vec::new();
+    while Instant::now() - last < QUIET && Instant::now() - start < CAP {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        while let Ok(ev) = rx.try_recv() {
+            out.push(ev);
+            last = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
-    drain(rx)
+    out
 }
 
 /// Inject an always-failing connection error on `list_topics`, run one driver call
