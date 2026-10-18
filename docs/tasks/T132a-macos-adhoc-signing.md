@@ -72,3 +72,8 @@ codesign --verify --deep --strict --verbose=2 "staging/$BUNDLE"
 - `release.yml` 加两行（ad-hoc 签名 + verify 门禁），本机双向验证通过，`workflows OK`。
 - 卡住过两次小坑：本机复跑 tar 那一步要把上一步写进 `GITHUB_ENV` 的 `BUNDLE` 拿出来 export
   （CI 里跨步自动传递，本机不会）；`GITHUB_ENV` 未设时 `echo >>` 会报 `No such file or directory`。
+- **实测验收**（tag v0.1.5 重打在 `2598d39`）：Release Build run `39093061289` 六个 job 全绿；
+  Release 上恰好 5 个 asset，macOS 两个档案体积已经带上 `_CodeSignature`（`macos_arm64` 4649088、
+  `macos_x64` 4602977，分别比签名前多 1 022 / 87 098 B）；CI run `39093029727` 五 job 全绿
+  （含新的「workflow 自检」）。
+- 终判仍在用户手上：下载解压后双击 `.app`。
